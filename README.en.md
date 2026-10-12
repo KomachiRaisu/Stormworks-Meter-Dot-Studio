@@ -49,6 +49,7 @@ It is a single `index.html` with no build step. Open it in a browser. Work is au
 ## Disclaimer
 
 Stormworks: Build and Rescue is a trademark of Sunfox Games. This is an **unofficial fan-made tool** and is not affiliated with Sunfox Games.
+I’m worried about copying someone else’s work, or repeating something that’s already been done, or ending up with a duplicate, so please let me know straight away if that’s the case!! If there’s a problem, I’ll take it down straight away!!!
 
 ## License
 
