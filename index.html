@@ -1,0 +1,805 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Stormworks用メーター/デジパネ作成ツール。ドット絵のように描いて、その場でプレビュー、最適化したLuaに変換。">
+<style>[hidden]{display:none!important}</style>
+<title>Meter Dot Studio</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+JP:wght@400;500;600&display=swap">
+<style>
+/* Layout: 左ツール列 | 中央(オプションバー・キャンバス・下部ドック) | 右(レイヤー・詳細)。計器パネルの工具箱イメージ */
+:root{
+  --bg:#eceef2; --panel:#ffffff; --panel2:#f4f5f8; --line:#d5d9e1; --text:#1a2030; --muted:#5f6a7e;
+  --accent:#0b6bcb; --accent-ink:#ffffff; --accent-soft:#dbeafe; --danger:#c62828; --ok:#1b7f4b; --warn:#a15c00;
+  --stage:#d9dde5; --grid:rgba(100,110,130,.28); --sel:#0b6bcb; --code-bg:#0f1420; --code-fg:#cfe3ff;
+  --font:"IBM Plex Sans JP","Hiragino Sans","Noto Sans JP","Yu Gothic",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0e1118; --panel:#171b25; --panel2:#1e2330; --line:#2b3242; --text:#e4e8f0; --muted:#8e99ae;
+  --accent:#4aa3ff; --accent-ink:#04101f; --accent-soft:#12304f; --danger:#ff7b72; --ok:#4cd08a; --warn:#f0b64a;
+  --stage:#0a0c12; --grid:rgba(160,170,190,.22); --sel:#4aa3ff; --code-bg:#0a0d14; --code-fg:#cfe3ff; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e1118; --panel:#171b25; --panel2:#1e2330; --line:#2b3242; --text:#e4e8f0; --muted:#8e99ae;
+  --accent:#4aa3ff; --accent-ink:#04101f; --accent-soft:#12304f; --danger:#ff7b72; --ok:#4cd08a; --warn:#f0b64a;
+  --stage:#0a0c12; --grid:rgba(160,170,190,.22); --sel:#4aa3ff; --code-bg:#0a0d14; --code-fg:#cfe3ff; color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:13px/1.45 var(--font);overflow:hidden}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+#app{display:grid;grid-template-rows:auto minmax(0,1fr);height:100%}
+header{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+.brand{display:flex;flex-direction:column;line-height:1.2;margin-right:6px}
+.brand b{font-size:15px;letter-spacing:.02em}
+.brand span{font-size:11px;color:var(--muted)}
+.hg{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.hg label{color:var(--muted);font-size:12px}
+.sp{flex:1}
+.btn{border:1px solid var(--line);background:var(--panel2);border-radius:5px;padding:4px 10px;display:inline-flex;align-items:center;gap:5px;min-height:28px}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.btn.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.btn:disabled{opacity:.4;cursor:default}
+.btn.sm{padding:2px 7px;min-height:24px;font-size:12px}
+.btn.danger:hover{border-color:var(--danger);color:var(--danger)}
+input[type=number],input[type=text],select{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:3px 6px;min-height:26px;min-width:0}
+input[type=number]{width:64px;font-family:var(--mono);font-size:12px}
+input[type=text]{width:100%}
+input[type=color]{width:30px;height:26px;padding:1px;border:1px solid var(--line);border-radius:4px;background:var(--panel);cursor:pointer}
+input[type=range]{accent-color:var(--accent);min-width:0}
+main{display:grid;grid-template-columns:62px minmax(0,1fr) 330px;min-height:0}
+#tools{display:flex;flex-direction:column;gap:2px;padding:6px 5px;background:var(--panel);border-right:1px solid var(--line);overflow-y:auto}
+.tool{display:flex;flex-direction:column;align-items:center;gap:1px;padding:5px 0 3px;border:1px solid transparent;border-radius:6px;background:none;font-size:10px;color:var(--muted)}
+.tool:hover{background:var(--panel2);color:var(--text)}
+.tool.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.tsep{height:1px;background:var(--line);margin:4px 4px;font-size:0}
+.tgroup{font-size:9px;color:var(--muted);text-align:center;letter-spacing:.08em;margin-top:2px}
+#center{display:grid;grid-template-rows:auto minmax(0,1fr) auto 262px;min-width:0;min-height:0}
+#optbar{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:6px 10px;background:var(--panel);border-bottom:1px solid var(--line)}
+.pal{display:flex;gap:3px;flex-wrap:wrap;align-items:center}
+.sw{width:18px;height:18px;border-radius:3px;border:1px solid rgba(128,128,128,.5);padding:0}
+.sw.on{outline:2px solid var(--accent);outline-offset:1px}
+#stage{overflow:auto;background:var(--stage);display:flex;padding:14px;min-height:0}
+#cvwrap{margin:auto;box-shadow:0 0 0 1px var(--line),0 6px 24px rgba(0,0,0,.25);line-height:0}
+#cv{image-rendering:pixelated;touch-action:none;display:block;cursor:crosshair}
+#status{display:flex;gap:14px;flex-wrap:wrap;padding:4px 10px;background:var(--panel);border-top:1px solid var(--line);color:var(--muted);font-size:12px}
+#status .mono{font-family:var(--mono)}
+#dock{display:grid;grid-template-rows:auto minmax(0,1fr);background:var(--panel);border-top:1px solid var(--line);min-height:0}
+.tabs{display:flex;gap:2px;padding:4px 8px 0;border-bottom:1px solid var(--line);align-items:center}
+.tab{border:1px solid transparent;border-bottom:none;background:none;padding:5px 12px;border-radius:5px 5px 0 0;color:var(--muted)}
+.tab.on{background:var(--panel2);border-color:var(--line);color:var(--text);font-weight:600;margin-bottom:-1px}
+.pane{overflow:auto;padding:8px 10px;min-height:0}
+.vrow{display:grid;grid-template-columns:110px 74px 54px 64px 64px minmax(120px,1fr) 78px auto auto;gap:6px;align-items:center;margin-bottom:5px;min-width:740px}
+.meter{height:6px;background:var(--line);border-radius:3px;overflow:hidden}.meter i{display:block;height:100%;width:0;background:var(--accent)}.meter.over i{background:var(--danger)}
+.btn.tg{min-width:64px;justify-content:center;font-weight:600}
+#luaopts{overflow:auto}
+.vhead{color:var(--muted);font-size:11px}
+#luapane{display:grid;grid-template-columns:200px minmax(0,1fr);gap:10px;height:100%}
+#luaopts{display:flex;flex-direction:column;gap:6px}
+#luaopts label{display:flex;gap:6px;align-items:center}
+#luaout{width:100%;height:100%;resize:none;background:var(--code-bg);color:var(--code-fg);border:1px solid var(--line);border-radius:6px;padding:8px;font:12px/1.5 var(--mono);tab-size:2;white-space:pre}
+.cnt{font-family:var(--mono);font-size:12px}
+.cnt.over{color:var(--danger);font-weight:600}
+aside{display:grid;grid-template-rows:minmax(120px,38%) minmax(0,1fr);background:var(--panel);border-left:1px solid var(--line);min-height:0}
+.sh{display:flex;align-items:center;gap:4px;padding:6px 8px;border-bottom:1px solid var(--line);font-weight:600;background:var(--panel2)}
+.sh .sp{flex:1}
+#layers{display:grid;grid-template-rows:auto minmax(0,1fr);min-height:0;border-bottom:1px solid var(--line)}
+#layerlist{overflow:auto}
+.lrow{display:flex;align-items:center;gap:5px;padding:4px 8px;border-bottom:1px solid var(--line);cursor:pointer;user-select:none}
+.lrow:hover{background:var(--panel2)}
+.lrow.sel{background:var(--accent-soft)}
+.lrow.off .lname{opacity:.45;text-decoration:line-through}
+.lrow.over{box-shadow:inset 0 2px 0 var(--accent)}
+.lname{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lname input{width:100%}
+.ib{border:none;background:none;padding:2px;color:var(--muted);display:inline-flex;border-radius:4px;min-width:22px;min-height:22px;align-items:center;justify-content:center}
+.ib:hover{color:var(--text);background:var(--panel2)}
+.ib.act{color:var(--accent)}
+.chip{width:14px;height:14px;border-radius:3px;border:1px solid rgba(128,128,128,.5);flex:none}
+.chip.dots{background:conic-gradient(#f43f5e 0 25%,#22c55e 0 50%,#3b82f6 0 75%,#facc15 0)}
+#inspector{overflow:auto;padding:0 0 12px}
+details{border-bottom:1px solid var(--line)}
+summary{padding:6px 10px;font-weight:600;cursor:pointer;color:var(--muted);font-size:12px;letter-spacing:.04em}
+details[open]>summary{color:var(--text)}
+.sec{padding:2px 10px 10px;display:grid;gap:6px}
+.row{display:grid;grid-template-columns:96px minmax(0,1fr);gap:6px;align-items:center}
+.row>label{color:var(--muted);font-size:12px}
+.ctl{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.hint{color:var(--muted);font-size:11px;line-height:1.4}
+.empty{padding:18px 12px;color:var(--muted)}
+#toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--text);color:var(--bg);padding:7px 14px;border-radius:6px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:50;max-width:90vw}
+#toast.show{opacity:1}
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:40;padding:16px}
+#modal[hidden]{display:none}
+.mbox{background:var(--panel);border:1px solid var(--line);border-radius:8px;width:min(680px,100%);padding:14px;display:grid;gap:10px}
+.mbox textarea{width:100%;height:260px;font:12px/1.4 var(--mono);background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:6px;resize:vertical}
+body.pv #tools,body.pv aside{opacity:.35;pointer-events:none}
+@media (max-width:900px){
+  body{overflow:auto}
+  #app{height:auto}
+  main{display:flex;flex-direction:column}
+  #tools{flex-direction:row;overflow-x:auto;border-right:none;border-bottom:1px solid var(--line)}
+  .tool{min-width:52px}
+  .tsep,.tgroup{display:none}
+  #center{display:flex;flex-direction:column}
+  #stage{min-height:340px}
+  #dock{height:320px}
+  aside{display:flex;flex-direction:column;border-left:none}
+  #layers{max-height:240px}
+  #luapane{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}
+  header{padding-inline:16px}
+}
+</style>
+
+</head>
+<body>
+<div id="app">
+<header>
+  <div class="brand"><b>Meter Dot Studio</b><span>描く → Lua → プレビュー を1画面で</span></div>
+  <div class="hg">
+    <label for="preset">画面</label>
+    <select id="preset"></select>
+    <input type="number" id="sw" min="8" max="512" aria-label="幅"><span>×</span><input type="number" id="sh" min="8" max="512" aria-label="高さ"><span class="hint">px</span>
+    <label for="sbg">背景</label><input type="color" id="sbg">
+  </div>
+  <div class="hg">
+    <button class="btn" id="undo" title="元に戻す (Ctrl+Z)">↶ 戻す</button>
+    <button class="btn" id="redo" title="やり直し (Ctrl+Y)">↷ 進む</button>
+    <label for="tpl">サンプル</label>
+    <select id="tpl"><option value="">選択して読込…</option><option value="car">車のメーター</option><option value="train">電車の運転台</option><option value="plane">飛行機(簡易PFD)</option><option value="blank">白紙から</option></select>
+    <button class="btn" id="proj">保存 / 読込</button>
+  </div>
+  <div class="sp"></div>
+  <div class="hg"><button class="btn primary" id="pvbtn" title="編集用の枠やグリッドを消して実機表示にする">▶ プレビュー表示</button></div>
+</header>
+<main>
+  <nav id="tools" aria-label="ツール"></nav>
+  <section id="center">
+    <div id="optbar">
+      <div class="hg"><label>描画色</label><input type="color" id="curcolor"><div class="pal" id="pal"></div></div>
+      <div class="hg"><button class="btn sm" id="applycol" title="選択中のレイヤーの色を描画色にする">→ 選択レイヤーに適用</button></div>
+      <div class="hg"><label for="brush">ブラシ</label><select id="brush"><option>1</option><option>2</option><option>3</option><option>4</option></select></div>
+      <div class="sp"></div>
+      <div class="hg"><label>表示</label><button class="btn sm" id="zout">−</button><span class="cnt" id="zval"></span><button class="btn sm" id="zin">＋</button><button class="btn sm" id="zfit">全体</button><button class="btn sm on" id="gridbtn">グリッド</button></div>
+    </div>
+    <div id="stage"><div id="cvwrap"><canvas id="cv" aria-label="編集キャンバス"></canvas></div></div>
+    <div id="status"><span>座標 <span class="mono" id="stxy">-,-</span></span><span class="mono" id="stcol"></span><span id="sthelp">ツールを選んで画面をクリック/ドラッグ → 右で詳細 → 下のスライダーで動作確認 → 「Lua出力」をコピー</span></div>
+    <div id="dock">
+      <div class="tabs"><button class="tab on" data-pane="vars">変数 / プレビュー値</button><button class="tab" data-pane="lua">Lua出力</button><div class="sp"></div><span class="cnt" id="cnt2"></span></div>
+      <div class="pane" id="varpane">
+        <div id="vars"></div>
+        <div class="hg" style="margin-top:6px"><button class="btn sm" id="addvar">＋ 数値変数</button><button class="btn sm" id="addbool">＋ Bool変数</button><button class="btn sm" id="sweepall">⟳ すべて自動で動かす</button><span class="hint">数値変数 = <code>input.getNumber(CH)</code>、Bool変数 = <code>input.getBool(CH)</code>。Boolは各レイヤーの「表示条件」で使えます。</span></div>
+      </div>
+      <div class="pane" id="luapanewrap" hidden>
+        <div id="luapane">
+          <div id="luaopts">
+            <button class="btn primary" id="copylua">Luaをコピー</button>
+            <span class="cnt" id="cnt"></span><div class="meter" id="meter"><i id="meterfill"></i></div><span class="hint" id="sav"></span>
+            <label><input type="checkbox" id="o_opt"><b>最適化(短縮)</b></label>
+            <label><input type="checkbox" id="o_comments">コメントを付ける</label>
+            <label><input type="checkbox" id="o_min">圧縮(インデント削除)</label>
+            <label><input type="checkbox" id="o_bg">背景色で塗りつぶす</label>
+            <label>文字数の上限 <select id="o_limit"><option value="8192">8192字</option><option value="4096">4096字(旧)</option></select></label>
+            <span class="hint">最適化: 色指定の重複削除・関数名の別名化・未使用変数の除去・数値の短縮・ドットの文字列化を自動で行います。プレビューのフォントや円の形は実機と数pxずれる場合があります。</span>
+          </div>
+          <textarea id="luaout" readonly spellcheck="false" aria-label="生成されたLua"></textarea>
+        </div>
+      </div>
+    </div>
+  </section>
+  <aside>
+    <div id="layers">
+      <div class="sh">レイヤー <span class="sp"></span>
+        <button class="ib" id="l_up" title="手前へ">▲</button><button class="ib" id="l_down" title="奥へ">▼</button>
+        <button class="ib" id="l_dup" title="複製">⧉</button><button class="ib" id="l_del" title="削除">✕</button></div>
+      <div id="layerlist"></div>
+    </div>
+    <div style="display:grid;grid-template-rows:auto minmax(0,1fr);min-height:0"><div class="sh">詳細設定</div><div id="inspector"></div></div>
+  </aside>
+</main>
+</div>
+<div id="toast"></div>
+<div id="modal" hidden><div class="mbox"><b>プロジェクトの保存 / 読込</b><div class="hint">下のJSONをコピーして保存しておき、貼り付けて「読み込む」で復元できます。</div><textarea id="projtxt" spellcheck="false"></textarea><div class="hg"><button class="btn" id="projcopy">コピー</button><button class="btn primary" id="projload">この内容を読み込む</button><button class="btn" id="projclose">閉じる</button></div></div></div>
+<input type="file" id="imgfile" accept="image/*" hidden>
+
+<script>
+'use strict';
+const $=(s,r=document)=>r.querySelector(s);
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const rad=d=>d*Math.PI/180;
+const rnd=x=>Math.floor(x+.5);
+const nf=x=>String(+(+x).toFixed(4));
+function h(tag,props,...kids){const e=document.createElement(tag);for(const k in props||{}){const v=props[k];
+  if(k==='class')e.className=v;else if(k==='style')e.style.cssText=v;else if(k==='html')e.innerHTML=v;
+  else if(k.startsWith('on'))e.addEventListener(k.slice(2),v);
+  else if(k==='value'||k==='checked'||k==='disabled')e[k]=v;
+  else if(v===true)e.setAttribute(k,'');else if(v!==false&&v!=null)e.setAttribute(k,v);}
+  for(const c of kids.flat()){if(c==null||c===false)continue;e.append(c.nodeType?c:document.createTextNode(c));}return e;}
+
+/* ---------- icons ---------- */
+const ICON={
+ select:'<path d="M5 3l11 6.5-4.8 1.4L8.8 16z"/>',
+ pencil:'<path d="M3 17l1-4L14 3l3 3L7 16z"/>',
+ eraser:'<path d="M4 13l8-8 5 5-6 6H7z"/><path d="M9 18h8"/>',
+ picker:'<path d="M13 3l4 4-3 3-4-4z"/><path d="M10 8l-6 6v3h3l6-6"/>',
+ dots:'<rect x="3" y="3" width="4" height="4"/><rect x="9" y="9" width="4" height="4"/><rect x="13" y="3" width="4" height="4"/><rect x="3" y="13" width="4" height="4"/>',
+ circle:'<circle cx="10" cy="10" r="6.5"/><path d="M10 3.5v2M10 14.5v2M3.5 10h2M14.5 10h2"/>',
+ arc:'<path d="M3.5 14A7.5 7.5 0 1 1 16.5 14"/>',
+ rect:'<rect x="3.5" y="5.5" width="13" height="9"/>',
+ line:'<path d="M4 16L16 4"/>',
+ needle:'<circle cx="10" cy="14" r="1.8"/><path d="M10 12.2L15.5 4.5"/><path d="M3 15A8 8 0 0 1 17 15" opacity=".4"/>',
+ bar:'<rect x="3" y="7.5" width="14" height="5"/><rect x="3" y="7.5" width="8" height="5" fill="currentColor"/>',
+ text:'<text x="10" y="14.5" text-anchor="middle" font-size="11" font-weight="700" fill="currentColor" stroke="none">Aa</text>',
+ eye:'<path d="M2 10s3-5.5 8-5.5S18 10 18 10s-3 5.5-8 5.5S2 10 2 10z"/><circle cx="10" cy="10" r="2.2"/>',
+ eyeoff:'<path d="M2 10s3-5.5 8-5.5S18 10 18 10s-3 5.5-8 5.5S2 10 2 10z" opacity=".5"/><path d="M3 17L17 3"/>',
+ lock:'<rect x="4.5" y="9" width="11" height="8" rx="1.5"/><path d="M7 9V6.5a3 3 0 0 1 6 0V9"/>',
+ unlock:'<rect x="4.5" y="9" width="11" height="8" rx="1.5" opacity=".5"/><path d="M7 9V6.5a3 3 0 0 1 5.6-1.5" opacity=".5"/>'
+};
+const ico=(k,s=18)=>`<svg viewBox="0 0 20 20" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k]}</svg>`;
+const TYPES={dots:'ドット',circle:'円',arc:'円弧',rect:'四角',line:'線',needle:'針',bar:'バー',text:'文字'};
+
+/* ---------- font (3x5 glyphs in a 5px cell) ---------- */
+const FONTSRC={'0':'###/#.#/#.#/#.#/###','1':'.#./##./.#./.#./###','2':'###/..#/###/#../###','3':'###/..#/###/..#/###','4':'#.#/#.#/###/..#/..#','5':'###/#../###/..#/###','6':'###/#../###/#.#/###','7':'###/..#/..#/.#./.#.','8':'###/#.#/###/#.#/###','9':'###/#.#/###/..#/###',
+'A':'.#./#.#/###/#.#/#.#','B':'##./#.#/##./#.#/##.','C':'.##/#../#../#../.##','D':'##./#.#/#.#/#.#/##.','E':'###/#../##./#../###','F':'###/#../##./#../#..','G':'.##/#../#.#/#.#/.##','H':'#.#/#.#/###/#.#/#.#','I':'###/.#./.#./.#./###','J':'..#/..#/..#/#.#/.#.','K':'#.#/#.#/##./#.#/#.#','L':'#../#../#../#../###','M':'#.#/###/###/#.#/#.#','N':'##./#.#/#.#/#.#/#.#','O':'.#./#.#/#.#/#.#/.#.','P':'##./#.#/##./#../#..','Q':'.#./#.#/#.#/##./.##','R':'##./#.#/##./#.#/#.#','S':'.##/#../.#./..#/##.','T':'###/.#./.#./.#./.#.','U':'#.#/#.#/#.#/#.#/###','V':'#.#/#.#/#.#/#.#/.#.','W':'#.#/#.#/###/###/#.#','X':'#.#/#.#/.#./#.#/#.#','Y':'#.#/#.#/.#./.#./.#.','Z':'###/..#/.#./#../###',
+'.':'.../.../.../.../.#.',',':'.../.../.../.#./#..',':':'.../.#./.../.#./...','-':'.../.../###/.../...','+':'.../.#./###/.#./...','/':'..#/..#/.#./#../#..','%':'#.#/..#/.#./#../#.#','(':'.#./#../#../#../.#.',')':'.#./..#/..#/..#/.#.','=':'.../###/.../###/...','_':'.../.../.../.../###','!':'.#./.#./.#./.../.#.','?':'##./..#/.#./.../.#.','*':'.../#.#/.#./#.#/...','<':'..#/.#./#../.#./..#','>':'#../.#./..#/.#./#..',"'":'.#./.#./.../.../...','°':'.#./#.#/.#./.../...',' ':'.../.../.../.../...','[':'##./#../#../#../##.',']':'.##/..#/..#/..#/.##'};
+const FONT={};for(const k in FONTSRC)FONT[k]=FONTSRC[k].split('/');
+const glyph=ch=>FONT[ch.toUpperCase()]||FONT['?'];
+
+/* ---------- raster ---------- */
+const hexCache={};
+function hex(s){let c=hexCache[s];if(!c){const m=/^#?([0-9a-f]{6})$/i.exec(s||'');const v=m?parseInt(m[1],16):0;c=hexCache[s]=[v>>16&255,v>>8&255,v&255]}return c}
+const toHex=(r,g,b)=>'#'+[r,g,b].map(v=>clamp(Math.round(v),0,255).toString(16).padStart(2,'0')).join('');
+function circPts(r){let x=r,y=0,err=1-r;const p=[];while(x>=y){p.push([x,y]);y++;if(err<0)err+=2*y+1;else{x--;err+=2*(y-x)+1}}return p}
+class Raster{
+ constructor(w,h,bg){this.w=w;this.h=h;const d=this.d=new Uint8ClampedArray(w*h*4);const c=hex(bg);for(let i=0;i<d.length;i+=4){d[i]=c[0];d[i+1]=c[1];d[i+2]=c[2];d[i+3]=255}this.c=[255,255,255];this.a=1}
+ col(s,a){this.c=hex(s);this.a=a/255}
+ px(x,y){if(x<0||y<0||x>=this.w||y>=this.h)return;const i=(y*this.w+x)*4,d=this.d,a=this.a,c=this.c;if(a>=1){d[i]=c[0];d[i+1]=c[1];d[i+2]=c[2]}else{d[i]+=(c[0]-d[i])*a;d[i+1]+=(c[1]-d[i+1])*a;d[i+2]+=(c[2]-d[i+2])*a}}
+ rectF(x,y,w,h){x=rnd(x);y=rnd(y);w=rnd(w);h=rnd(h);for(let j=0;j<h;j++)for(let i=0;i<w;i++)this.px(x+i,y+j)}
+ rect(x,y,w,h){x=rnd(x);y=rnd(y);w=rnd(w);h=rnd(h);for(let i=0;i<=w;i++){this.px(x+i,y);if(h>0)this.px(x+i,y+h)}for(let j=1;j<h;j++){this.px(x,y+j);this.px(x+w,y+j)}}
+ line(x0,y0,x1,y1){x0=rnd(x0);y0=rnd(y0);x1=rnd(x1);y1=rnd(y1);const dx=Math.abs(x1-x0),dy=-Math.abs(y1-y0),sx=x0<x1?1:-1,sy=y0<y1?1:-1;let e=dx+dy;for(;;){this.px(x0,y0);if(x0===x1&&y0===y1)break;const e2=2*e;if(e2>=dy){e+=dy;x0+=sx}if(e2<=dx){e+=dx;y0+=sy}}}
+ circO(cx,cy,r){cx=rnd(cx);cy=rnd(cy);r=rnd(r);if(r<0)return;const seen=new Set();const P=(x,y)=>{const k=x*4096+y;if(seen.has(k))return;seen.add(k);this.px(x,y)};
+  for(const [x,y] of circPts(r)){P(cx+x,cy+y);P(cx-x,cy+y);P(cx+x,cy-y);P(cx-x,cy-y);P(cx+y,cy+x);P(cx-y,cy+x);P(cx+y,cy-x);P(cx-y,cy-x)}}
+ circF(cx,cy,r){cx=rnd(cx);cy=rnd(cy);r=rnd(r);if(r<0)return;const ext=new Array(r+1).fill(0);for(const [x,y] of circPts(r)){ext[y]=Math.max(ext[y],x);ext[x]=Math.max(ext[x],y)}
+  for(let dy=-r;dy<=r;dy++){const e=ext[Math.abs(dy)];for(let dx=-e;dx<=e;dx++)this.px(cx+dx,cy+dy)}}
+ tri(ax,ay,bx,by,cx,cy){ax=rnd(ax);ay=rnd(ay);bx=rnd(bx);by=rnd(by);cx=rnd(cx);cy=rnd(cy);this.line(ax,ay,bx,by);this.line(bx,by,cx,cy);this.line(cx,cy,ax,ay);
+  const ed=(x0,y0,x1,y1,px,py)=>(x1-x0)*(py-y0)-(y1-y0)*(px-x0);
+  for(let y=Math.min(ay,by,cy);y<=Math.max(ay,by,cy);y++)for(let x=Math.min(ax,bx,cx);x<=Math.max(ax,bx,cx);x++){const px=x,py=y;const w0=ed(bx,by,cx,cy,px,py),w1=ed(cx,cy,ax,ay,px,py),w2=ed(ax,ay,bx,by,px,py);if((w0>=0&&w1>=0&&w2>=0)||(w0<=0&&w1<=0&&w2<=0))this.px(x,y)}}
+ text(x,y,s){x=rnd(x);y=rnd(y);for(let k=0;k<s.length;k++){const g=glyph(s[k]);const ox=x+k*5;for(let r=0;r<5;r++)for(let c=0;c<3;c++)if(g[r][c]==='#')this.px(ox+c,y+r)}}
+}
+
+/* ---------- state ---------- */
+let S,V={},SW=new Set(),curColor='#38bdf8',tool='select',previewMode=false,zoom=6,zoomFit=true,showGrid=true;
+let hist=[],hi=-1,drag=null,ghost=null,hover=null,lastR=null,brush=1;
+const LO={comments:false,minify:true,opt:true,bg:false,limit:8192};
+const blankState=()=>({screen:{w:96,h:96,bg:'#000000'},vars:[],layers:[],sel:null,counters:{},nid:1});
+const isObj=o=>o&&typeof o==='object'&&!Array.isArray(o);
+function merge(a,b){for(const k in b){a[k]=isObj(b[k])&&isObj(a[k])?Object.assign({},a[k],b[k]):b[k]}return a}
+const DEF={
+ dots:()=>({pts:{}}),
+ circle:L=>({x:48,y:48,r:30,ring:true,fill:false,ticks:{on:false,a0:-135,a1:135,n:10,minor:4,lenMaj:6,lenMin:3,inset:1,colMaj:L.color,colMin:L.color,lbl:false,lblMin:0,lblMax:100,lblEvery:1,lblDec:0,lblR:18,lblColor:L.color}}),
+ arc:()=>({x:48,y:48,r:30,thick:3,a0:-135,a1:135,var:null,min:0,max:100}),
+ rect:()=>({x:10,y:10,w:30,h:16,fill:true}),
+ line:()=>({x1:10,y1:10,x2:50,y2:30}),
+ needle:()=>({x:48,y:48,len:30,tail:6,style:'line',width:3,hub:0,a0:-135,a1:135,var:null,min:0,max:100}),
+ bar:()=>({x:10,y:10,w:50,h:8,dir:'r',style:'solid',segs:10,gap:1,mark:2,var:null,min:0,max:100,bg:{on:true,color:'#1e293b'},warn:{on:false,at:80,color:'#ef4444'}}),
+ text:()=>({x:10,y:10,pre:'',suf:'',var:null,mode:'round',dec:0,pad:0,align:'l'})
+};
+const VARTYPES=new Set(['arc','needle','bar','text']);
+function ensureVar(){let v=S.vars.find(x=>x.type!=='bool');if(!v){v={id:'V'+(S.nid++),name:'value',ch:S.vars.filter(x=>x.type!=='bool').length+1,min:0,max:100,init:50,type:'num'};S.vars.push(v);V[v.id]=50;buildVars()}return v.id}
+function mkLayer(type,props={},dry=false){
+ const col=props.color||curColor;
+ const L={id:dry?'ghost':'L'+(S.nid++),type,name:'',visible:true,locked:false,color:col,alpha:255,cond:{on:false,v:null,op:'<',val:0}};
+ merge(L,DEF[type](L));merge(L,props);
+ if(!dry){ if(VARTYPES.has(type)&&L.var==null&&!('noVar' in props))L.var=ensureVar(); delete L.noVar;
+   if(!L.name){S.counters[type]=(S.counters[type]||0)+1;L.name=TYPES[type]+' '+S.counters[type]} }
+ else L.name='ghost';
+ return L}
+const layerById=id=>S.layers.find(l=>l.id===id);
+const selLayer=()=>layerById(S.sel);
+
+/* ---------- history / persistence ---------- */
+function snap(){return JSON.stringify(S)}
+function commit(){const s=snap();if(hist[hi]===s)return;hist=hist.slice(0,hi+1);hist.push(s);if(hist.length>120)hist.shift();hi=hist.length-1;save();updUndo()}
+function updUndo(){$('#undo').disabled=hi<=0;$('#redo').disabled=hi>=hist.length-1}
+function undo(){if(hi>0){hi--;S=JSON.parse(hist[hi]);fixVals();afterLoad();save()}}
+function redo(){if(hi<hist.length-1){hi++;S=JSON.parse(hist[hi]);fixVals();afterLoad();save()}}
+function fixVals(){for(const v of S.vars)if(!(v.id in V))V[v.id]=v.init;for(const k of Object.keys(V))if(!S.vars.find(v=>v.id===k))delete V[k]}
+function save(){try{localStorage.setItem('meter-dot-studio.v1',JSON.stringify({S,V,curColor,pal:recent,lo:LO}))}catch(e){}}
+let recent=[];
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>t.classList.remove('show'),2200)}
+
+/* ---------- value helpers ---------- */
+const getV=id=>(id!=null&&V[id]!=null)?V[id]:0;
+function norm(v,a,b){return b===a?0:clamp((v-a)/(b-a),0,1)}
+function cFixed(v,d){const k=Math.pow(10,d),x=v*k,f=Math.floor(x),df=x-f;let r;if(df===.5)r=f%2===0?f:f+1;else r=Math.round(x);return (r/k).toFixed(d)}
+function fmtNum(v,mode,dec,pad){const k=Math.pow(10,dec);let x=v;if(mode==='floor')x=Math.floor(v*k+1e-9)/k;else if(mode==='ceil')x=Math.ceil(v*k-1e-9)/k;
+  let s=cFixed(x,dec);if(pad>0){const W=pad+(dec>0?dec+1:0);const neg=s[0]==='-';let b=neg?s.slice(1):s;b=b.padStart(neg?W-1:W,'0');s=(neg?'-':'')+b}return s}
+function textStr(L){return L.var==null?L.pre:L.pre+fmtNum(getV(L.var),L.mode,L.dec,L.pad)+L.suf}
+function condOk(L){const c=L.cond;if(!c||!c.on||c.v==null)return true;const vv=S.vars.find(x=>x.id===c.v);const v=getV(c.v);if(vv&&vv.type==='bool')return (v!==0)===(c.val>=.5);switch(c.op){case'>':return v>c.val;case'<':return v<c.val;case'>=':return v>=c.val;case'<=':return v<=c.val;case'==':return v===c.val;case'~=':return v!==c.val}return true}
+const arcStep=r=>+clamp(40/Math.max(r,1),.2,5).toFixed(2);
+function barN(L){return(L.dir==='r'||L.dir==='l')?L.w:L.h}
+function barRect(L,a,b){const N=barN(L);switch(L.dir){case'r':return[L.x+a,L.y,b-a,L.h];case'l':return[L.x+N-b,L.y,b-a,L.h];case'u':return[L.x,L.y+N-b,L.w,b-a];default:return[L.x,L.y+a,L.w,b-a]}}
+function segGeom(L){const n=Math.max(1,L.segs|0),g=Math.max(0,L.gap),N=barN(L),len=(N-g*(n-1))/n;return{n,g,len,step:len+g}}
+
+/* ---------- draw one layer ---------- */
+function drawLayer(R,L){
+ const A=L.alpha;
+ switch(L.type){
+ case'dots':{for(const k in L.pts){const v=+k;R.col(L.pts[k],A);R.px(v&1023,v>>10)}break}
+ case'circle':{
+  if(L.ring){R.col(L.color,A);L.fill?R.circF(L.x,L.y,L.r):R.circO(L.x,L.y,L.r)}
+  const T=L.ticks;if(T.on&&T.n>0){const full=Math.abs(T.a1-T.a0)>=360,M=T.minor+1,TT=T.n*M,last=full?TT-1:TT,RO=L.r-T.inset;
+   for(let i=0;i<=last;i++){const a=rad(T.a0+(T.a1-T.a0)*i/TT),s=Math.sin(a),c=Math.cos(a),maj=i%M===0,l=maj?T.lenMaj:T.lenMin;R.col(maj?T.colMaj:T.colMin,A);R.line(L.x+s*RO,L.y-c*RO,L.x+s*(RO-l),L.y-c*(RO-l))}
+   if(T.lbl){const lastL=full?T.n-1:T.n;R.col(T.lblColor,A);for(let i=0;i<=lastL;i+=Math.max(1,T.lblEvery|0)){const a=rad(T.a0+(T.a1-T.a0)*i/T.n),t=cFixed(T.lblMin+(T.lblMax-T.lblMin)*i/T.n,T.lblDec);
+     R.text(Math.floor(L.x+Math.sin(a)*T.lblR-t.length*2.5+.5),Math.floor(L.y-Math.cos(a)*T.lblR-2.5+.5),t)}}}
+  break}
+ case'arc':{R.col(L.color,A);const dir=(L.a1>=L.a0)?1:-1,st=dir*arcStep(L.r);const e=L.var!=null?L.a0+norm(getV(L.var),L.min,L.max)*(L.a1-L.a0):L.a1,lim=e+dir*.001;
+  for(let k=0;k<Math.max(1,L.thick);k++){const q=L.r-k;for(let a=L.a0;dir>0?a<=lim:a>=lim;a+=st){const d=rad(a);R.px(Math.floor(L.x+q*Math.sin(d)+.5),Math.floor(L.y-q*Math.cos(d)+.5))}}break}
+ case'rect':R.col(L.color,A);L.fill?R.rectF(L.x,L.y,L.w,L.h):R.rect(L.x,L.y,L.w,L.h);break;
+ case'line':R.col(L.color,A);R.line(L.x1,L.y1,L.x2,L.y2);break;
+ case'needle':{const f=norm(getV(L.var),L.min,L.max),a=rad(L.a0+f*(L.a1-L.a0)),s=Math.sin(a),c=Math.cos(a);R.col(L.color,A);
+  const tx=L.x+s*L.len,ty=L.y-c*L.len;
+  if(L.style==='tri'){const bx=L.x-s*L.tail,by=L.y+c*L.tail,hw=L.width/2;R.tri(tx,ty,bx+c*hw,by+s*hw,bx-c*hw,by-s*hw)}
+  else R.line(L.x-s*L.tail,L.y+c*L.tail,tx,ty);
+  if(L.hub>0)R.circF(L.x,L.y,L.hub);break}
+ case'bar':{const N=barN(L),f=norm(getV(L.var),L.min,L.max),rc=(a,b)=>barRect(L,a,b);
+  if(L.style==='seg'){const g=segGeom(L),k=Math.floor(f*g.n+.5),WI=Math.ceil(g.n*L.warn.at/100-1e-9);
+   for(let i=0;i<g.n;i++){const a=Math.floor(i*g.step+.5),b=Math.floor(i*g.step+g.len+.5);
+    if(i<k){R.col(L.warn.on&&i>=WI?L.warn.color:L.color,A);R.rectF(...rc(a,b))}else if(L.bg.on){R.col(L.bg.color,A);R.rectF(...rc(a,b))}}}
+  else{if(L.bg.on){R.col(L.bg.color,A);R.rectF(L.x,L.y,L.w,L.h)}
+   if(L.style==='mark'){const t=Math.max(1,L.mark),n=Math.floor(f*(N-t)+.5);R.col(L.color,A);R.rectF(...rc(n,n+t))}
+   else{const n=Math.floor(f*N+.5),wz=Math.round(L.warn.at/100*N);
+    if(L.warn.on){const m=Math.min(n,wz);if(m>0){R.col(L.color,A);R.rectF(...rc(0,m))}if(n>wz){R.col(L.warn.color,A);R.rectF(...rc(wz,n))}}
+    else if(n>0){R.col(L.color,A);R.rectF(...rc(0,n))}}}
+  break}
+ case'text':{const s=textStr(L);R.col(L.color,A);const x=L.align==='c'?Math.floor(L.x-s.length*2.5+.5):L.align==='r'?L.x-s.length*5:L.x;R.text(x,L.y,s);break}
+ }
+}
+
+/* ---------- geometry for editing ---------- */
+function bbox(L){switch(L.type){
+ case'dots':{let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(const k in L.pts){const v=+k,x=v&1023,y=v>>10;if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y}return x0>x1?null:[x0,y0,x1,y1]}
+ case'circle':case'arc':return[L.x-L.r,L.y-L.r,L.x+L.r,L.y+L.r];
+ case'rect':case'bar':return[L.x,L.y,L.x+L.w,L.y+L.h];
+ case'line':return[Math.min(L.x1,L.x2),Math.min(L.y1,L.y2),Math.max(L.x1,L.x2),Math.max(L.y1,L.y2)];
+ case'needle':{const f=norm(getV(L.var),L.min,L.max),a=rad(L.a0+f*(L.a1-L.a0)),s=Math.sin(a),c=Math.cos(a);const xs=[L.x,L.x+s*L.len,L.x-s*L.tail],ys=[L.y,L.y-c*L.len,L.y+c*L.tail];return[Math.floor(Math.min(...xs)),Math.floor(Math.min(...ys)),Math.ceil(Math.max(...xs)),Math.ceil(Math.max(...ys))]}
+ case'text':{const n=textStr(L).length,w=n*5,x=L.align==='c'?Math.floor(L.x-w/2+.5):L.align==='r'?L.x-w:L.x;return[x,L.y,x+w-1,L.y+4]}}}
+function segDist(px,py,x0,y0,x1,y1){const dx=x1-x0,dy=y1-y0,l=dx*dx+dy*dy;let t=l?((px-x0)*dx+(py-y0)*dy)/l:0;t=clamp(t,0,1);return Math.hypot(px-(x0+t*dx),py-(y0+t*dy))}
+function hit(L,x,y){switch(L.type){
+ case'dots':for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const X=x+dx,Y=y+dy;if(X>=0&&X<1024&&(Y*1024+X) in L.pts)return true}return false;
+ case'circle':return Math.hypot(x-L.x,y-L.y)<=L.r+2;
+ case'arc':return Math.abs(Math.hypot(x-L.x,y-L.y)-(L.r-L.thick/2))<=L.thick/2+2;
+ case'line':return segDist(x,y,L.x1,L.y1,L.x2,L.y2)<=2;
+ case'needle':{const b=bbox(L);const f=norm(getV(L.var),L.min,L.max),a=rad(L.a0+f*(L.a1-L.a0));return segDist(x,y,L.x-Math.sin(a)*L.tail,L.y+Math.cos(a)*L.tail,L.x+Math.sin(a)*L.len,L.y-Math.cos(a)*L.len)<=3||Math.hypot(x-L.x,y-L.y)<=Math.max(3,L.hub+1)}
+ default:{const b=bbox(L);return b&&x>=b[0]-1&&x<=b[2]+1&&y>=b[1]-1&&y<=b[3]+1}}}
+function pick(x,y){for(let i=S.layers.length-1;i>=0;i--){const L=S.layers[i];if(L.visible&&!L.locked&&hit(L,x,y))return L}return null}
+function moveBy(L,dx,dy){switch(L.type){
+ case'dots':{const n={};for(const k in L.pts){const v=+k,x=(v&1023)+dx,y=(v>>10)+dy;if(x>=0&&x<1024&&y>=0&&y<1024)n[y*1024+x]=L.pts[k]}L.pts=n;break}
+ case'line':L.x1+=dx;L.x2+=dx;L.y1+=dy;L.y2+=dy;break;
+ default:L.x+=dx;L.y+=dy}}
+
+/* ---------- rendering ---------- */
+const cv=$('#cv'),ctx=cv.getContext('2d'),off=document.createElement('canvas');
+let dirtyR=true,rq=false;
+function requestRender(full=true){if(full)dirtyR=true;if(rq)return;rq=true;requestAnimationFrame(()=>{rq=false;paint()})}
+function paint(){
+ const W=S.screen.w,H=S.screen.h;
+ if(dirtyR){const R=new Raster(W,H,S.screen.bg);
+  for(const L of S.layers){if(!L.visible)continue;if(!condOk(L)&&!(!previewMode&&L.id===S.sel))continue;drawLayer(R,L)}
+  if(ghost&&!previewMode)drawLayer(R,ghost);
+  lastR=R;off.width=W;off.height=H;off.getContext('2d').putImageData(new ImageData(R.d,W,H),0,0);dirtyR=false}
+ const z=zoom;cv.width=W*z;cv.height=H*z;cv.style.width=W*z+'px';cv.style.height=H*z+'px';
+ ctx.imageSmoothingEnabled=false;ctx.drawImage(off,0,0,W*z,H*z);
+ if(!previewMode){
+  if(showGrid&&z>=5){ctx.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue('--grid').trim()||'rgba(128,128,128,.3)';ctx.lineWidth=1;ctx.beginPath();
+   for(let x=1;x<W;x++){ctx.moveTo(x*z+.5,0);ctx.lineTo(x*z+.5,H*z)}for(let y=1;y<H;y++){ctx.moveTo(0,y*z+.5);ctx.lineTo(W*z,y*z+.5)}ctx.stroke()}
+  const L=selLayer();if(L&&L.visible){const b=bbox(L);if(b){ctx.save();ctx.strokeStyle='#ff9f1c';ctx.lineWidth=2;ctx.setLineDash([5,3]);ctx.strokeRect(b[0]*z-1,b[1]*z-1,(b[2]-b[0]+1)*z+2,(b[3]-b[1]+1)*z+2);ctx.restore();
+    if(L.type==='circle'||L.type==='needle'||L.type==='arc'){ctx.fillStyle='#ff9f1c';ctx.fillRect(L.x*z-1,L.y*z-5,3,11);ctx.fillRect(L.x*z-5,L.y*z-1,11,3)}}}
+  if(hover&&(tool==='pencil'||tool==='eraser')){const o=-Math.floor((brush-1)/2);ctx.strokeStyle=tool==='eraser'?'#ff4d4d':'#fff';ctx.lineWidth=1;ctx.strokeRect((hover.x+o)*z+.5,(hover.y+o)*z+.5,brush*z-1,brush*z-1)}
+ }
+ $('#zval').textContent=z+'×'}
+function fitZoom(){const st=$('#stage');const aw=st.clientWidth-30,ah=st.clientHeight-30;zoom=clamp(Math.floor(Math.min(aw/S.screen.w,ah/S.screen.h)),1,32);if(zoom<1)zoom=1}
+function relayout(){if(zoomFit)fitZoom();requestRender()}
+new ResizeObserver(()=>{if(zoomFit)relayout()}).observe($('#stage'));
+
+/* ---------- variables UI ---------- */
+const varCtl={};
+function buildVars(){const box=$('#vars');if(!box)return;box.innerHTML='';
+ box.append(h('div',{class:'vrow vhead'},h('span',{},'名前'),h('span',{},'種類'),h('span',{},'CH'),h('span',{},'最小'),h('span',{},'最大'),h('span',{},'プレビュー値'),h('span',{},''),h('span',{},'自動'),h('span',{},'')));
+ for(const k in varCtl)delete varCtl[k];
+ S.vars.forEach(v=>{const bool=v.type==='bool';
+  const nm=h('input',{type:'text',value:v.name,'aria-label':'変数名',oninput:e=>{v.name=e.target.value;gen()},onchange:()=>{commit();buildInspector()}});
+  const typ=h('select',{'aria-label':'種類'},h('option',{value:'num',selected:!bool},'数値'),h('option',{value:'bool',selected:bool},'Bool'));
+  typ.onchange=()=>{v.type=typ.value;SW.delete(v.id);if(v.type==='bool'){V[v.id]=0;v.init=0;for(const L of S.layers)if(L.var===v.id)L.var=null}else{v.init=(v.min+v.max)/2;V[v.id]=v.init}commit();buildVars();buildInspector();requestRender();gen()};
+  const ch=h('input',{type:'number',value:v.ch,min:1,max:32,title:bool?'input.getBool のチャンネル':'input.getNumber のチャンネル',oninput:e=>{v.ch=parseInt(e.target.value)||1;gen()},onchange:commit});
+  const del=h('button',{class:'btn sm danger',title:'この変数を削除',onclick:()=>delVar(v.id)},'✕');
+  const sw=h('input',{type:'checkbox',checked:SW.has(v.id),'aria-label':'自動で動かす',onchange:()=>{sw.checked?SW.add(v.id):SW.delete(v.id)}});
+  if(bool){
+   const btn=h('button',{class:'btn tg'+(V[v.id]?' on':''),'aria-pressed':String(!!V[v.id])},V[v.id]?'ON':'OFF');
+   btn.onclick=()=>{SW.delete(v.id);sw.checked=false;V[v.id]=V[v.id]?0:1;btn.classList.toggle('on',!!V[v.id]);btn.textContent=V[v.id]?'ON':'OFF';btn.setAttribute('aria-pressed',String(!!V[v.id]));requestRender()};
+   varCtl[v.id]={btn};
+   box.append(h('div',{class:'vrow'},nm,typ,ch,h('span',{class:'hint'},'—'),h('span',{class:'hint'},'—'),h('span',{class:'ctl'},btn,h('span',{class:'hint'},'クリックで切替')),h('span',{}),sw,del));return}
+  const slider=h('input',{type:'range',min:v.min,max:v.max,step:'any',value:V[v.id]??v.init,'aria-label':v.name+'の値'});
+  const val=h('input',{type:'number',step:'any',value:V[v.id]??v.init,'aria-label':v.name+'の数値'});
+  slider.addEventListener('input',()=>{SW.delete(v.id);sw.checked=false;V[v.id]=+slider.value;val.value=+(+slider.value).toFixed(3);requestRender()});
+  val.addEventListener('input',()=>{const x=parseFloat(val.value);if(!isNaN(x)){SW.delete(v.id);sw.checked=false;V[v.id]=x;slider.value=x;requestRender()}});
+  const mn=h('input',{type:'number',value:v.min,step:'any',oninput:e=>{const x=parseFloat(e.target.value);if(!isNaN(x)){v.min=x;slider.min=x}},onchange:commit});
+  const mx=h('input',{type:'number',value:v.max,step:'any',oninput:e=>{const x=parseFloat(e.target.value);if(!isNaN(x)){v.max=x;slider.max=x}},onchange:commit});
+  varCtl[v.id]={slider,val};
+  box.append(h('div',{class:'vrow'},nm,typ,ch,mn,mx,slider,val,sw,del))});
+}
+function updAllText(){}
+function delVar(id){S.vars=S.vars.filter(v=>v.id!==id);delete V[id];SW.delete(id);for(const L of S.layers){if(L.var===id)L.var=null;if(L.cond&&L.cond.v===id)L.cond.v=null}commit();buildVars();buildInspector();requestRender();gen()}
+function addVar(type){const bool=type==='bool';const nb=S.vars.filter(v=>(v.type==='bool')===bool).length+1;const v={id:'V'+(S.nid++),name:(bool?'flag':'var')+nb,ch:nb,min:0,max:bool?1:100,init:bool?0:50,type:bool?'bool':'num'};S.vars.push(v);V[v.id]=v.init;commit();buildVars();buildInspector();gen()}
+$('#addvar').onclick=()=>addVar('num');$('#addbool').onclick=()=>addVar('bool');
+let sweepAll=false;$('#sweepall').onclick=()=>{sweepAll=!sweepAll;SW.clear();if(sweepAll)S.vars.forEach(v=>SW.add(v.id));$('#sweepall').classList.toggle('on',sweepAll);buildVars()};
+(function loop(){const t=performance.now();if(SW.size){for(const id of SW){const v=S.vars.find(x=>x.id===id);if(!v)continue;if(v.type==='bool'){const x=Math.floor(t/900)%2;if(V[id]!==x){V[id]=x;const c=varCtl[id];if(c&&c.btn){c.btn.classList.toggle('on',!!x);c.btn.textContent=x?'ON':'OFF'}}continue}const ph=(t/5000)%1,tri=ph<.5?ph*2:2-ph*2;const x=v.min+tri*(v.max-v.min);V[id]=x;const c=varCtl[id];if(c){c.slider.value=x;if(document.activeElement!==c.val)c.val.value=+x.toFixed(2)}}requestRender()}requestAnimationFrame(loop)})();
+
+/* ---------- Lua generation ---------- */
+const ascii=s=>(s||'').replace(/[^\x20-\x7e]/g,'').trim();
+const RESERVED=new Set('and break do else elseif end false for function goto if in local nil not or repeat return then true until while screen input output math string table norm onTick onDraw tx ty bx by hw'.split(' '));
+const SHORT=['e','g','h','j','o','p','r','u','v','w','x','y','z'];
+function varNames(short,ids){const m={},used=new Set();let si=0;for(const v of S.vars){if(short&&ids&&!ids.has(v.id))continue;let n;
+  if(short){n=si<SHORT.length?SHORT[si]:'v'+(si-SHORT.length+1);si++}
+  else{n=(v.name||'v').replace(/[^A-Za-z0-9_]/g,'_');if(!n||/^[0-9]/.test(n))n='v'+n;if(RESERVED.has(n)||/^[a-zA-Z]$/.test(n))n+='_';while(used.has(n))n+='_'}
+  used.add(n);m[v.id]=n}return m}
+const lcol=(c,a)=>{const k=hex(c);return `screen.setColor(${k[0]},${k[1]},${k[2]}${a<255?','+a:''})`};
+const lstr=s=>'"'+String(s).replace(/\\/g,'\\\\').replace(/"/g,'\\"')+'"';
+function luaFmt(vx,mode,dec,pad){const k=Math.pow(10,dec);let e=vx;if(mode==='floor')e=dec?`math.floor(${vx}*${k}+1e-9)/${k}`:`math.floor(${vx}+1e-9)`;else if(mode==='ceil')e=dec?`math.ceil(${vx}*${k}-1e-9)/${k}`:`math.ceil(${vx}-1e-9)`;
+  const W=pad>0?pad+(dec>0?dec+1:0):0;return `string.format("%${pad>0?'0'+W:''}.${dec}f",${e})`}
+function mergeRects(points){const rows=new Map();for(const [x,y] of points){if(!rows.has(y))rows.set(y,[]);rows.get(y).push(x)}
+ const ys=[...rows.keys()].sort((a,b)=>a-b);let active=new Map();const done=[];let prevY=null;
+ for(const y of ys){const xs=rows.get(y).sort((a,b)=>a-b);const runs=[];let s=xs[0],p=xs[0];for(let i=1;i<xs.length;i++){if(xs[i]===p+1)p=xs[i];else{runs.push([s,p-s+1]);s=p=xs[i]}}runs.push([s,p-s+1]);
+  if(prevY!==y-1){for(const r of active.values())done.push(r);active=new Map()}
+  const next=new Map();for(const [x,w] of runs){const k=x+','+w,a=active.get(k);if(a){a.h++;next.set(k,a);active.delete(k)}else next.set(k,{x,y,w,h:1})}
+  for(const r of active.values())done.push(r);active=next;prevY=y}
+ for(const r of active.values())done.push(r);return done}
+const par=x=>(typeof x==='string'&&/[+-]/.test(x))||(typeof x==='number'&&x<0)?`(${x})`:x;
+const sym=(a,op,b)=>{if(typeof a==='number'&&typeof b==='number')return op==='+'?a+b:a-b;if(b===0)return a;if(a===0&&op==='+')return b;return `${a}${op}${par(b)}`};
+function barRectS(L,a,b){const N=barN(L),X=L.x,Y=L.y,W=L.w,H=L.h;let r;
+ switch(L.dir){case'r':r=[sym(X,'+',a),Y,sym(b,'-',a),H];break;case'l':r=[sym(sym(X,'+',N),'-',b),Y,sym(b,'-',a),H];break;case'u':r=[X,sym(sym(Y,'+',N),'-',b),W,sym(b,'-',a)];break;default:r=[X,sym(Y,'+',a),W,sym(b,'-',a)]}return r.join(',')}
+function dotGroups(L){const groups=new Map();for(const k in L.pts){const v=+k;const c=L.pts[k];if(!groups.has(c))groups.set(c,[]);groups.get(c).push([v&1023,v>>10])}
+ return [...groups].map(([c,pts])=>{const rs=mergeRects(pts);const nums=[];rs.forEach(r=>nums.push(r.x,r.y,r.w,r.h));return{c,rs,nums}})}
+function genLayer(L,nm,ctx){const o=[],p=s=>o.push(s),A=L.alpha,vx=id=>id!=null&&nm[id]?nm[id]:'0';
+ switch(L.type){
+ case'dots':{for(const g of dotGroups(L)){p(lcol(g.c,A));if(g.rs.length<=2)g.rs.forEach(r=>p(`screen.drawRectF(${r.x},${r.y},${r.w},${r.h})`));
+   else if(ctx&&ctx.dotStr){p(`do local t=D("${encNums(g.nums)}")`);p('for i=1,#t,4 do screen.drawRectF(t[i],t[i+1],t[i+2],t[i+3]) end end')}
+   else{const lines=[];for(let k=0;k<g.nums.length;k+=24)lines.push(g.nums.slice(k,k+24).join(','));
+    p('do local t={');lines.forEach((l,k)=>p(l+(k<lines.length-1?',':'')));p('}');p('for i=1,#t,4 do screen.drawRectF(t[i],t[i+1],t[i+2],t[i+3]) end end')}}break}
+ case'circle':{if(L.ring){p(lcol(L.color,A));p(`screen.${L.fill?'drawCircleF':'drawCircle'}(${L.x},${L.y},${L.r})`)}
+  const T=L.ticks;if(T.on&&T.n>0){const full=Math.abs(T.a1-T.a0)>=360,M=T.minor+1,TT=T.n*M,last=full?TT-1:TT,RO=L.r-T.inset;
+   p(`for i=0,${last} do`);p(`local a=math.rad(${nf(T.a0)}+${nf(T.a1-T.a0)}*i/${TT})`);p('local s,c=math.sin(a),math.cos(a)');
+   if(M>1){p(`local l=${nf(T.lenMin)}`);p(`if i%${M}==0 then`);p(lcol(T.colMaj,A));p(`l=${nf(T.lenMaj)}`);p('else');p(lcol(T.colMin,A));p('end')}
+   else{p(lcol(T.colMaj,A));p(`local l=${nf(T.lenMaj)}`)}
+   p(`screen.drawLine(${L.x}+s*${par(RO)},${L.y}-c*${par(RO)},${L.x}+s*(${RO}-l),${L.y}-c*(${RO}-l))`);p('end');
+   if(T.lbl){const lastL=full?T.n-1:T.n;p(lcol(T.lblColor,A));p(`for i=0,${lastL},${Math.max(1,T.lblEvery|0)} do`);p(`local a=math.rad(${nf(T.a0)}+${nf(T.a1-T.a0)}*i/${T.n})`);
+    p(`local t=string.format("%.${T.lblDec}f",${nf(T.lblMin)}+${nf(T.lblMax-T.lblMin)}*i/${T.n})`);
+    p(`screen.drawText(math.floor(${L.x}+math.sin(a)*${par(T.lblR)}-#t*2.5+.5),math.floor(${L.y}-math.cos(a)*${par(T.lblR)}-2.5+.5),t)`);p('end')}}break}
+ case'arc':{const dir=(L.a1>=L.a0)?1:-1,st=nf(dir*arcStep(L.r));const e=L.var!=null?`${nf(L.a0)}+norm(${vx(L.var)},${nf(L.min)},${nf(L.max)})*${nf(L.a1-L.a0)}`:nf(L.a1);
+  p(lcol(L.color,A));p(`for k=0,${Math.max(1,L.thick)-1} do`);p(`local q=${L.r}-k`);p(`for a=${nf(L.a0)},${e}${dir>0?'+':'-'}0.001,${st} do`);p('local d=math.rad(a)');
+  p(`screen.drawRectF(math.floor(${L.x}+q*math.sin(d)+.5),math.floor(${L.y}-q*math.cos(d)+.5),1,1)`);p('end');p('end');break}
+ case'rect':p(lcol(L.color,A));p(`screen.${L.fill?'drawRectF':'drawRect'}(${L.x},${L.y},${L.w},${L.h})`);break;
+ case'line':p(lcol(L.color,A));p(`screen.drawLine(${L.x1},${L.y1},${L.x2},${L.y2})`);break;
+ case'needle':{p('do');p(`local a=math.rad(${nf(L.a0)}+norm(${vx(L.var)},${nf(L.min)},${nf(L.max)})*${nf(L.a1-L.a0)})`);p('local s,c=math.sin(a),math.cos(a)');p(lcol(L.color,A));
+  p(`local tx,ty=${L.x}+s*${par(L.len)},${L.y}-c*${par(L.len)}`);
+  if(L.style==='tri'){p(`local bx,by=${L.x}-s*${par(L.tail)},${L.y}+c*${par(L.tail)}`);p(`local hw=${nf(L.width/2)}`);p('screen.drawTriangleF(tx,ty,bx+c*hw,by+s*hw,bx-c*hw,by-s*hw)')}
+  else p(`screen.drawLine(${L.tail?`${L.x}-s*${par(L.tail)},${L.y}+c*${par(L.tail)}`:`${L.x},${L.y}`},tx,ty)`);
+  if(L.hub>0)p(`screen.drawCircleF(${L.x},${L.y},${L.hub})`);p('end');break}
+ case'bar':{const N=barN(L);p('do');p(`local f=norm(${vx(L.var)},${nf(L.min)},${nf(L.max)})`);
+  if(L.style==='seg'){const g=segGeom(L),WI=Math.ceil(g.n*L.warn.at/100-1e-9);p(`local k=math.floor(f*${g.n}+.5)`);p(`for i=0,${g.n-1} do`);
+   p(`local a,b=math.floor(i*${nf(g.step)}+.5),math.floor(i*${nf(g.step)}+${nf(g.len)}+.5)`);p('if i<k then');
+   if(L.warn.on){p(`if i>=${WI} then`);p(lcol(L.warn.color,A));p('else');p(lcol(L.color,A));p('end')}else p(lcol(L.color,A));
+   p(`screen.drawRectF(${barRectS(L,'a','b')})`);if(L.bg.on){p('else');p(lcol(L.bg.color,A));p(`screen.drawRectF(${barRectS(L,'a','b')})`)}p('end');p('end')}
+  else{if(L.bg.on){p(lcol(L.bg.color,A));p(`screen.drawRectF(${L.x},${L.y},${L.w},${L.h})`)}
+   if(L.style==='mark'){const t=Math.max(1,L.mark);p(`local n=math.floor(f*${N-t}+.5)`);p(lcol(L.color,A));p(`screen.drawRectF(${barRectS(L,'n',`n+${t}`)})`)}
+   else{const wz=Math.round(L.warn.at/100*N);p(`local n=math.floor(f*${N}+.5)`);
+    if(L.warn.on){p(`local m=math.min(n,${wz})`);p('if m>0 then');p(lcol(L.color,A));p(`screen.drawRectF(${barRectS(L,0,'m')})`);p('end');p(`if n>${wz} then`);p(lcol(L.warn.color,A));p(`screen.drawRectF(${barRectS(L,wz,'n')})`);p('end')}
+    else{p('if n>0 then');p(lcol(L.color,A));p(`screen.drawRectF(${barRectS(L,0,'n')})`);p('end')}}}
+  p('end');break}
+ case'text':{if(L.var==null){const s=L.pre;const x=L.align==='c'?Math.floor(L.x-s.length*2.5+.5):L.align==='r'?L.x-s.length*5:L.x;p(lcol(L.color,A));p(`screen.drawText(${x},${L.y},${lstr(s)})`)}
+  else{const parts=[];if(L.pre)parts.push(lstr(L.pre));parts.push(luaFmt(vx(L.var),L.mode,L.dec,L.pad));if(L.suf)parts.push(lstr(L.suf));
+   p('do');p(`local s=${parts.join('..')}`);p(lcol(L.color,A));
+   const xe=L.align==='c'?`math.floor(${L.x}-#s*2.5+.5)`:L.align==='r'?`${L.x}-#s*5`:`${L.x}`;p(`screen.drawText(${xe},${L.y},s)`);p('end')}break}
+ }
+ return o}
+function autoIndent(lines){let lvl=0;return lines.map(l=>{const t=l.trim();if(/^(end|else|elseif)\b/.test(t))lvl=Math.max(0,lvl-1);const out='  '.repeat(lvl)+t;if(/(\bthen|\bdo|\belse)$/.test(t)||/^function\b.*\)$/.test(t))lvl++;return out})}
+const ALPHA=[];for(let c=35;c<=126;c++)if(c!==92&&c!==93)ALPHA.push(String.fromCharCode(c));
+function encNums(nums){let s='';for(let n of nums){while(n>=89){s+=ALPHA[89];n-=89}s+=ALPHA[n]}return s}
+const DECODER='local function D(s)local t,n={},0 for i=1,#s do local c=s:byte(i)-35 if c>56 then c=c-2 end if c>88 then n=n+89 else t[#t+1]=n+c n=0 end end return t end';
+function dedupeColors(lines){const out=[],stack=[];let cur=null;
+ for(const l of lines){const t=l.trim();
+  if(t.startsWith('screen.setColor(')){if(t===cur)continue;cur=t;out.push(l);continue}
+  if(/^do\b/.test(t)){stack.push('T');out.push(l);continue}
+  if(/^(if|for|while)\b.*\b(then|do)$/.test(t)||/^function\b/.test(t)){stack.push('O');cur=null;out.push(l);continue}
+  if(/^(else|elseif)\b/.test(t)){cur=null;out.push(l);continue}
+  if(/\bend end$/.test(t)){stack.pop();out.push(l);continue}
+  if(t==='end'){const k=stack.pop();if(k==='O')cur=null;out.push(l);continue}
+  out.push(l)}
+ return out}
+const TOKRE=/(\s*)("(?:[^"\\]|\\.)*"|\d+\.?\d*(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?|[A-Za-z_]\w*|\.\.|==|~=|<=|>=|[^\sA-Za-z0-9_])/y;
+function tok(l){const out=[];let i=0;while(i<l.length){TOKRE.lastIndex=i;const m=TOKRE.exec(l);if(!m)break;const v=m[2];out.push({ws:m[1],v,t:v[0]==='"'?'s':/^[\d.]/.test(v)&&v!=='.'&&v!=='..'?'n':/^[A-Za-z_]/.test(v)?'i':'o'});i=TOKRE.lastIndex}return out}
+const LIBS=new Set(['screen','math','string','input']);
+function joinToks(ts,min){let s='';ts.forEach((t,i)=>{let ws=t.ws;if(min){ws='';const p=ts[i-1];if(p){const w=x=>/[A-Za-z0-9_]/.test(x),a=p.v[p.v.length-1],b=t.v[0];if((w(a)&&w(b))||(p.t==='n'&&b==='.')||(a==='-'&&b==='-'))ws=' '}}s+=ws+t.v});return s}
+function optimizeTokens(lines,op){
+ let T=lines.map(l=>l.trim().startsWith('--')?null:tok(l));let decl=null;
+ if(op.opt){
+  const cnt=new Map(),usedId=new Set();
+  T.forEach(ts=>{if(!ts)return;ts.forEach((t,i)=>{if(t.t==='i'&&!(i>0&&ts[i-1].v==='.')){usedId.add(t.v);if(LIBS.has(t.v)&&ts[i+1]&&ts[i+1].v==='.'&&ts[i+2]&&ts[i+2].t==='i'){const k=t.v+'.'+ts[i+2].v;cnt.set(k,(cnt.get(k)||0)+1)}}})});
+  const cands=[...cnt].map(([k,n])=>({k,n,gain:n*(k.length-1)-(k.length+4)})).filter(c=>c.gain>0).sort((a,b)=>b.gain-a.gain);
+  const pool=[];for(let c=65;c<=90;c++)pool.push(String.fromCharCode(c));for(let c=65;c<=90;c++)pool.push('Z'+String.fromCharCode(c));
+  const map=new Map();for(const c of cands){let a;do{a=pool.shift()}while(a&&usedId.has(a));if(!a)break;map.set(c.k,a)}
+  const normTo=usedId.has('N')||[...map.values()].includes('N')?null:'N';
+  T=T.map(ts=>{if(!ts)return ts;const o=[];for(let i=0;i<ts.length;i++){const t=ts[i];
+    if(t.t==='i'&&!(i>0&&ts[i-1].v==='.')){if(LIBS.has(t.v)&&ts[i+1]&&ts[i+1].v==='.'&&ts[i+2]&&ts[i+2].t==='i'){const a=map.get(t.v+'.'+ts[i+2].v);if(a){o.push({ws:t.ws,v:a,t:'i'});i+=2;continue}}
+      if(t.v==='norm'&&normTo){o.push({ws:t.ws,v:normTo,t:'i'});continue}}
+    if(t.t==='n'&&/^0\.\d/.test(t.v)){o.push({ws:t.ws,v:t.v.slice(1),t:'n'});continue}
+    o.push(t)}return o});
+  if(map.size){const ks=[...map.keys()];decl='local '+[...map.values()].join(',')+'='+ks.join(',')}
+ }
+ let out=lines.map((l,i)=>T[i]?joinToks(T[i],op.minify):l);
+ if(decl){const i=out.findIndex(l=>/^(local )?function\b/.test(l.trim()));out.splice(i<0?out.length:i,0,decl)}
+ return out}
+function autoIndentSafe(lines){return autoIndent(lines)}
+function genLua(o=LO){
+ const used=new Set();for(const L of S.layers){if(!L.visible)continue;if(L.var!=null)used.add(L.var);if(L.cond.on&&L.cond.v!=null)used.add(L.cond.v)}
+ const vars=o.opt?S.vars.filter(v=>used.has(v.id)):S.vars;
+ const nm=varNames(o.opt,o.opt?used:null);
+ const ctx={dotStr:false};
+ if(o.opt){let save=0;for(const L of S.layers){if(L.type!=='dots'||!L.visible)continue;for(const g of dotGroups(L))if(g.rs.length>2)save+=g.nums.join(',').length-(encNums(g.nums).length+4)}ctx.dotStr=save>DECODER.length+10}
+ const body=[];
+ if(o.bg){body.push(lcol(S.screen.bg,255));body.push('screen.drawClear()')}
+ for(const L of S.layers){if(!L.visible)continue;let g=genLayer(L,nm,ctx);if(!g.length)continue;
+  if(L.cond.on&&L.cond.v!=null){const cv=S.vars.find(x=>x.id===L.cond.v);const ex=cv&&cv.type==='bool'?(L.cond.val>=.5?nm[cv.id]:'not '+nm[cv.id]):`${nm[L.cond.v]} ${L.cond.op} ${nf(L.cond.val)}`;g=[`if ${ex} then`,...g,'end']}
+  body.push('-- '+L.type+': '+(ascii(L.name)||L.id));body.push(...g)}
+ const txt=body.join('\n');const out=[];
+ out.push('-- Meter Dot Studio output');out.push(`-- screen ${S.screen.w}x${S.screen.h} px (${S.screen.w/32}x${S.screen.h/32} modules)`);
+ for(const v of vars)out.push(`-- ${nm[v.id]}: ${ascii(v.name)} (${v.type==='bool'?'bool':'num'} ch${v.ch})`);
+ for(const v of vars)out.push(`local ${nm[v.id]}=${v.type==='bool'?'false':'0'}`);
+ if(txt.includes('norm('))out.push('local function norm(v,a,b) return math.max(0,math.min(1,(v-a)/(b-a))) end');
+ if(ctx.dotStr&&txt.includes('D('))out.push(DECODER);
+ if(vars.length){out.push('function onTick()');for(const v of vars)out.push(`${nm[v.id]}=input.${v.type==='bool'?'getBool':'getNumber'}(${v.ch})`);out.push('end')}
+ out.push('function onDraw()');out.push(...body);out.push('end');
+ let lines=out;
+ if(!o.comments||o.minify)lines=lines.filter(l=>!l.trim().startsWith('--'));
+ if(o.opt)lines=dedupeColors(lines);
+ if(o.opt||o.minify)lines=optimizeTokens(lines,{opt:o.opt,minify:o.minify});
+ lines=o.minify?lines.map(l=>l.trim()):autoIndent(lines);
+ return lines.join('\n')}
+let genT=null;function gen(){clearTimeout(genT);genT=setTimeout(()=>{const s=genLua(LO);$('#luaout').value=s;const n=s.length,lim=LO.limit;
+ for(const id of['#cnt','#cnt2']){const e=$(id);e.textContent=`${n} / ${lim} 文字`;e.classList.toggle('over',n>lim)}
+ $('#meter').classList.toggle('over',n>lim);$('#meterfill').style.width=Math.min(100,n/lim*100)+'%';
+ $('#sav').textContent=LO.opt?(()=>{const b=genLua({...LO,opt:false}).length;return b>n?`最適化で ${b} → ${n} 文字(−${b-n}字 / −${Math.round((b-n)/b*100)}%)`:'最適化の効果はありません'})():'最適化オフ(オンにすると短縮できます)'},80)}
+
+/* ---------- tools ---------- */
+const TOOLS=[['select','選択','V'],['pencil','ドット','P'],['eraser','消しゴム','E'],['picker','スポイト','I'],null,['circle','円・目盛','O'],['arc','円弧','A'],['rect','四角','R'],['line','線','L'],['needle','針','N'],['bar','バー','B'],['text','文字','T']];
+const tb=$('#tools');
+for(const t of TOOLS){if(!t){tb.append(h('div',{class:'tsep'}),h('div',{class:'tgroup'},'置く'));continue}
+ tb.append(h('button',{class:'tool'+(t[0]===tool?' on':''),'data-tool':t[0],title:`${t[1]} (${t[2]})`,html:ico(t[0],20)+`<span>${t[1]}</span>`,onclick:()=>setTool(t[0])}))}
+function setTool(t){tool=t;document.querySelectorAll('.tool').forEach(b=>b.classList.toggle('on',b.dataset.tool===t));cv.style.cursor=t==='select'?'default':'crosshair';
+ const help={select:'クリックで選択、ドラッグで移動、矢印キーで1pxずつ移動',pencil:'ドラッグで点を打つ。ドットレイヤー以外を選択中は新しいドットレイヤーを作ります',eraser:'ドラッグでドットを消す',picker:'クリックした場所の色を描画色にする',circle:'中心からドラッグして半径を指定(クリックのみで標準サイズ)',arc:'中心からドラッグして半径を指定',rect:'ドラッグで範囲を指定',line:'ドラッグで始点から終点まで',needle:'回転の中心をクリック(ドラッグで長さ指定)',bar:'ドラッグで範囲を指定',text:'クリックした位置に文字を置く'};
+ $('#sthelp').textContent=help[t]||'';requestRender(false)}
+const PAL=['#ffffff','#cbd5e1','#64748b','#1e293b','#000000','#ef4444','#f97316','#facc15','#84cc16','#22c55e','#14b8a6','#38bdf8','#3b82f6','#8b5cf6','#ec4899','#7f1d1d'];
+function buildPal(){const p=$('#pal');p.innerHTML='';[...recent,...PAL].forEach(c=>p.append(h('button',{class:'sw'+(c===curColor?' on':''),style:`background:${c}`,title:c,onclick:()=>setCur(c)})))}
+function setCur(c,addRecent){curColor=c;$('#curcolor').value=c;if(addRecent){recent=[c,...recent.filter(x=>x!==c)].slice(0,6)}buildPal();$('#stcol').textContent=c;save()}
+$('#curcolor').addEventListener('input',e=>{curColor=e.target.value;$('#stcol').textContent=curColor});
+$('#curcolor').addEventListener('change',e=>setCur(e.target.value,true));
+$('#applycol').onclick=()=>{const L=selLayer();if(!L){toast('レイヤーを選択してください');return}if(L.type==='dots'){for(const k in L.pts)L.pts[k]=curColor}else{L.color=curColor;if(L.ticks){L.ticks.colMaj=L.ticks.colMin=L.ticks.lblColor=curColor}}commit();buildLayers();buildInspector();requestRender();gen()};
+$('#brush').onchange=e=>brush=+e.target.value;
+
+function posOf(e){const r=cv.getBoundingClientRect();return{x:Math.floor((e.clientX-r.left)/(r.width/S.screen.w)),y:Math.floor((e.clientY-r.top)/(r.height/S.screen.h))}}
+function bres(x0,y0,x1,y1,cb){const dx=Math.abs(x1-x0),dy=-Math.abs(y1-y0),sx=x0<x1?1:-1,sy=y0<y1?1:-1;let e=dx+dy;for(;;){cb(x0,y0);if(x0===x1&&y0===y1)break;const e2=2*e;if(e2>=dy){e+=dy;x0+=sx}if(e2<=dx){e+=dx;y0+=sy}}}
+function paintLayer(){const L=selLayer();if(L&&L.type==='dots'){if(L.locked){toast('このレイヤーはロックされています');return null}return L}
+ const N=mkLayer('dots');const i=S.sel?S.layers.findIndex(l=>l.id===S.sel):S.layers.length-1;S.layers.splice(i+1,0,N);S.sel=N.id;buildLayers();buildInspector();return N}
+function paintSeg(a,b){const W=S.screen.w,H=S.screen.h,o=-Math.floor((brush-1)/2);
+ const targets=drag.erase&&!(selLayer()&&selLayer().type==='dots')?S.layers.filter(l=>l.type==='dots'&&!l.locked&&l.visible):[drag.L||(drag.L=paintLayer())];
+ if(!targets[0])return;
+ bres(a.x,a.y,b.x,b.y,(x,y)=>{for(let j=0;j<brush;j++)for(let i=0;i<brush;i++){const X=x+o+i,Y=y+o+j;if(X<0||Y<0||X>=W||Y>=H)continue;for(const L of targets){if(drag.erase)delete L.pts[Y*1024+X];else L.pts[Y*1024+X]=curColor}}})}
+function buildCreate(t,a,b,dry){const dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy),W=S.screen.w,H=S.screen.h,m=Math.min(W,H);const nv=dry?{noVar:true}:{};
+ switch(t){
+ case'circle':return mkLayer('circle',{x:a.x,y:a.y,r:d>=2?rnd(d):rnd(m*.35),...nv},dry);
+ case'arc':return mkLayer('arc',{x:a.x,y:a.y,r:d>=2?rnd(d):rnd(m*.35),...nv},dry);
+ case'rect':{const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y);return d>=2?mkLayer('rect',{x,y,w:Math.abs(dx)+1,h:Math.abs(dy)+1},dry):mkLayer('rect',{x:a.x,y:a.y},dry)}
+ case'line':return d>=2?mkLayer('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y},dry):mkLayer('line',{x1:a.x,y1:a.y,x2:a.x+20,y2:a.y},dry);
+ case'needle':return mkLayer('needle',{x:a.x,y:a.y,len:d>=4?rnd(d):rnd(m*.35),tail:Math.min(6,rnd(m*.08)),...nv},dry);
+ case'bar':{const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y);const big=d>=3;const w=Math.abs(dx)+1,hh=Math.abs(dy)+1;return mkLayer('bar',big?{x,y,w,h:hh,dir:w>=hh?'r':'u',...nv}:{x:a.x,y:a.y,...nv},dry)}
+ case'text':return mkLayer('text',{x:a.x,y:a.y,...nv},dry)}}
+cv.addEventListener('pointerdown',e=>{if(previewMode||e.button>0)return;cv.setPointerCapture(e.pointerId);const p=posOf(e);hover=p;
+ if(tool==='select'){const L=pick(p.x,p.y);selectLayer(L?L.id:null);if(L)drag={kind:'move',L,last:p,moved:false}}
+ else if(tool==='pencil'||tool==='eraser'){drag={kind:'paint',erase:tool==='eraser',L:null,last:p};paintSeg(p,p);dirtyR=true}
+ else if(tool==='picker'){const R=lastR;if(R&&p.x>=0&&p.y>=0&&p.x<R.w&&p.y<R.h){const i=(p.y*R.w+p.x)*4;setCur(toHex(R.d[i],R.d[i+1],R.d[i+2]),true)}}
+ else{drag={kind:'create',start:p,cur:p};ghost=buildCreate(tool,p,p,true)}
+ requestRender()});
+cv.addEventListener('pointermove',e=>{const p=posOf(e);hover=p;$('#stxy').textContent=`${p.x}, ${p.y}`;
+ if(drag){if(drag.kind==='move'){const dx=p.x-drag.last.x,dy=p.y-drag.last.y;if(dx||dy){moveBy(drag.L,dx,dy);drag.last=p;drag.moved=true;dirtyR=true;buildInspector(true)}}
+  else if(drag.kind==='paint'){paintSeg(drag.last,p);drag.last=p;dirtyR=true}
+  else if(drag.kind==='create'){drag.cur=p;ghost=buildCreate(tool,drag.start,p,true);dirtyR=true}}
+ requestRender(false)});
+cv.addEventListener('pointerleave',()=>{hover=null;requestRender(false)});
+function endDrag(){if(!drag)return;const d=drag;drag=null;
+ if(d.kind==='create'){const L=buildCreate(tool,d.start,d.cur,false);ghost=null;const i=S.sel?S.layers.findIndex(l=>l.id===S.sel):S.layers.length-1;S.layers.splice(i+1,0,L);S.sel=L.id;setTool('select');commit();buildLayers();buildInspector();gen()}
+ else if(d.kind==='paint'){commit();buildLayers();buildInspector();gen()}
+ else if(d.kind==='move'&&d.moved){commit();gen()}
+ dirtyR=true;requestRender()}
+cv.addEventListener('pointerup',endDrag);cv.addEventListener('pointercancel',endDrag);
+
+/* ---------- layers panel ---------- */
+function selectLayer(id){S.sel=id;buildLayers();buildInspector();requestRender()}
+function buildLayers(){const box=$('#layerlist');box.innerHTML='';
+ if(!S.layers.length)box.append(h('div',{class:'empty'},'レイヤーはまだありません。左のツールで画面をクリックすると作られます。'));
+ for(let i=S.layers.length-1;i>=0;i--){const L=S.layers[i];
+  const nameEl=h('span',{class:'lname',title:'ダブルクリックで名前を変更'},L.name);
+  const row=h('div',{class:'lrow'+(L.id===S.sel?' sel':'')+(L.visible?'':' off'),draggable:'true',onclick:()=>selectLayer(L.id)},
+   h('button',{class:'ib'+(L.visible?' act':''),title:'表示/非表示',html:ico(L.visible?'eye':'eyeoff',16),onclick:e=>{e.stopPropagation();L.visible=!L.visible;commit();buildLayers();requestRender();gen()}}),
+   h('button',{class:'ib'+(L.locked?' act':''),title:'ロック',html:ico(L.locked?'lock':'unlock',16),onclick:e=>{e.stopPropagation();L.locked=!L.locked;commit();buildLayers()}}),
+   h('span',{class:'ib',html:ico(L.type,16),title:TYPES[L.type]}),
+   h('span',{class:'chip'+(L.type==='dots'?' dots':''),style:L.type==='dots'?'':`background:${L.color}`}),nameEl);
+  nameEl.addEventListener('dblclick',e=>{e.stopPropagation();const inp=h('input',{type:'text',value:L.name});nameEl.replaceChildren(inp);inp.focus();inp.select();
+   const done=()=>{L.name=inp.value||L.name;commit();buildLayers();buildInspector();gen()};inp.addEventListener('blur',done);inp.addEventListener('keydown',k=>{if(k.key==='Enter')inp.blur();if(k.key==='Escape'){inp.value=L.name;inp.blur()}});inp.addEventListener('click',k=>k.stopPropagation())});
+  row.addEventListener('dragstart',e=>{e.dataTransfer.setData('text/plain',String(i));e.dataTransfer.effectAllowed='move'});
+  row.addEventListener('dragover',e=>{e.preventDefault();row.classList.add('over')});row.addEventListener('dragleave',()=>row.classList.remove('over'));
+  row.addEventListener('drop',e=>{e.preventDefault();const from=+e.dataTransfer.getData('text/plain');if(isNaN(from)||from===i)return;const [m]=S.layers.splice(from,1);S.layers.splice(i,0,m);commit();buildLayers();requestRender();gen()});
+  box.append(row)}}
+function moveLayer(dir){const i=S.layers.findIndex(l=>l.id===S.sel);if(i<0)return;const j=i+dir;if(j<0||j>=S.layers.length)return;[S.layers[i],S.layers[j]]=[S.layers[j],S.layers[i]];commit();buildLayers();requestRender();gen()}
+$('#l_up').onclick=()=>moveLayer(1);$('#l_down').onclick=()=>moveLayer(-1);
+$('#l_del').onclick=()=>{const i=S.layers.findIndex(l=>l.id===S.sel);if(i<0)return;S.layers.splice(i,1);S.sel=S.layers[Math.min(i,S.layers.length-1)]?.id||null;commit();buildLayers();buildInspector();requestRender();gen()};
+$('#l_dup').onclick=()=>{const L=selLayer();if(!L)return;const c=JSON.parse(JSON.stringify(L));c.id='L'+(S.nid++);c.name=L.name+' コピー';moveBy(c,3,3);const i=S.layers.indexOf(L);S.layers.splice(i+1,0,c);S.sel=c.id;commit();buildLayers();buildInspector();requestRender();gen()};
+
+/* ---------- inspector ---------- */
+function changed(){requestRender();gen();buildLayersLite()}
+let bl=null;function buildLayersLite(){clearTimeout(bl);bl=setTimeout(buildLayers,150)}
+const fin=(o,k,opt={})=>{const i=h('input',{type:'number',value:o[k],step:opt.step??1,min:opt.min,max:opt.max,'aria-label':opt.label||k});
+ i.addEventListener('input',()=>{const v=parseFloat(i.value);if(isNaN(v))return;o[k]=v;changed()});i.addEventListener('change',()=>{commit();if(opt.rebuild)buildInspector()});return i};
+const ftx=(o,k)=>{const i=h('input',{type:'text',value:o[k]??'','aria-label':k});i.addEventListener('input',()=>{o[k]=i.value;changed()});i.addEventListener('change',commit);return i};
+const fck=(o,k,rebuild,label)=>{const i=h('input',{type:'checkbox',checked:!!o[k],id:'ck'+Math.random().toString(36).slice(2,7)});i.addEventListener('change',()=>{o[k]=i.checked;changed();commit();if(rebuild)buildInspector()});return h('label',{class:'ctl'},i,label||'')};
+const fsel=(o,k,opts,rebuild)=>{const s=h('select',{'aria-label':k},opts.map(([v,t])=>h('option',{value:v,selected:String(o[k])===String(v)},t)));s.addEventListener('change',()=>{o[k]=isNaN(+s.value)||s.value===''?s.value:(typeof o[k]==='number'?+s.value:s.value);changed();commit();if(rebuild)buildInspector()});return s};
+const fcol=(o,k)=>{const i=h('input',{type:'color',value:o[k],'aria-label':k});i.addEventListener('input',()=>{o[k]=i.value;changed()});i.addEventListener('change',()=>{commit();buildLayers()});return h('span',{class:'ctl'},i,h('button',{class:'btn sm',title:'描画色を使う',onclick:()=>{o[k]=curColor;i.value=curColor;changed();commit();buildLayers()}},'描画色'))};
+const fvar=(o,k,allowNone=true,kind='num',cb)=>{const list=kind==='all'?S.vars:S.vars.filter(v=>v.type!=='bool');const s=h('select',{'aria-label':'変数'},allowNone?h('option',{value:''},'(なし)'):null,list.map(v=>h('option',{value:v.id,selected:o[k]===v.id},`${v.type==='bool'?'[Bool] ':''}${v.name} (ch${v.ch})`)));s.addEventListener('change',()=>{o[k]=s.value||null;if(cb)cb();changed();commit();buildInspector()});return s};
+const row=(label,...c)=>h('div',{class:'row'},h('label',{},label),h('div',{class:'ctl'},...c));
+const sec=(title,open,...rows)=>{const d=h('details',{},h('summary',{},title),h('div',{class:'sec'},...rows));if(open)d.open=true;return d};
+const openState={};
+function buildInspector(keepFocus){const box=$('#inspector');if(keepFocus&&box.contains(document.activeElement)&&document.activeElement.tagName==='INPUT')return;
+ box.querySelectorAll('details').forEach(d=>{const s=d.querySelector('summary');if(s)openState[s.textContent]=d.open});
+ box.innerHTML='';const L=selLayer();
+ if(!L){box.append(h('div',{class:'empty'},'レイヤーを選択すると詳細が出ます。',h('br'),'左のツールで「円・目盛」「針」「バー」「文字」をクリックすると、変数に連動した部品がすぐ置けます。'));return}
+ const T=L.type;const xy=(ox,kx,ky,lx='X',ly='Y')=>row('位置',h('span',{},lx),fin(ox,kx),h('span',{},ly),fin(ox,ky));
+ const items=[];
+ items.push(sec('基本',true,row('名前',ftx(L,'name')),T!=='dots'?row('色',fcol(L,'color')):h('div',{class:'hint'},'ドットは点ごとに色を持ちます(描画色で打つ)。'),
+   row('不透明度',(()=>{const r=h('input',{type:'range',min:0,max:255,value:L.alpha,'aria-label':'不透明度'});const o=h('span',{class:'cnt'},L.alpha);r.oninput=()=>{L.alpha=+r.value;o.textContent=r.value;changed()};r.onchange=commit;return h('span',{class:'ctl'},r,o)})())));
+ if(T==='dots'){const n=Object.keys(L.pts).length;items.push(sec('ドット',true,h('div',{class:'hint'},`${n} 点`),
+   row('操作',h('button',{class:'btn sm',onclick:()=>{for(const k in L.pts)L.pts[k]=curColor;commit();requestRender();gen()}},'全点を描画色に'),h('button',{class:'btn sm danger',onclick:()=>{L.pts={};commit();requestRender();gen();buildInspector()}},'全消去')),
+   row('画像から',h('button',{class:'btn sm',onclick:()=>$('#imgfile').click()},'画像→ドット化…')),h('div',{class:'hint'},'画像は画面サイズに縮小し216色に減色して新しいドットレイヤーにします。')))}
+ if(T==='circle'){items.push(sec('円',true,xy(L,'x','y'),row('半径',fin(L,'r',{min:1})),row('描画',fck(L,'ring',false,'円を描く'),fck(L,'fill',false,'塗りつぶし'))));
+  const t=L.ticks;items.push(sec('目盛り(円を分割)',true,row('目盛り',fck(t,'on',true,'表示する')),
+   ...(t.on?[row('角度',h('span',{},'開始'),fin(t,'a0',{label:'開始角'}),h('span',{},'終了'),fin(t,'a1',{label:'終了角'})),h('div',{class:'hint'},'0°=真上、時計回りが+。360°差で全周(最後の目盛りは重複しないよう省略)'),
+    row('分割数',fin(t,'n',{min:1,label:'分割数'}),h('span',{class:'hint'},'主目盛りの間隔数')),row('補助目盛',fin(t,'minor',{min:0,label:'補助'}),h('span',{class:'hint'},'主の間に入れる本数')),
+    row('長さ',h('span',{},'主'),fin(t,'lenMaj',{label:'主長'}),h('span',{},'補助'),fin(t,'lenMin',{label:'補助長'})),row('外周から',fin(t,'inset',{label:'内側へ'}),h('span',{class:'hint'},'px内側から描く')),
+    row('色',h('span',{},'主'),fcol(t,'colMaj'),h('span',{},'補助'),fcol(t,'colMin'))]:[])));
+  if(t.on)items.push(sec('目盛りの数値ラベル',true,row('ラベル',fck(t,'lbl',true,'表示する')),...(t.lbl?[row('数値範囲',h('span',{},'最小'),fin(t,'lblMin',{step:'any'}),h('span',{},'最大'),fin(t,'lblMax',{step:'any'})),row('間引き',fin(t,'lblEvery',{min:1}),h('span',{class:'hint'},'N個おきに表示')),row('小数桁',fin(t,'lblDec',{min:0,max:4})),
+    row('半径',fin(t,'lblR'),h('button',{class:'btn sm',onclick:()=>{t.lblR=Math.round(L.r-t.inset-t.lenMaj-5);commit();buildInspector();changed()}},'自動')),row('色',fcol(t,'lblColor'))]:[])))}
+ if(T==='arc'){items.push(sec('円弧',true,xy(L,'x','y'),row('半径',fin(L,'r',{min:1})),row('太さ',fin(L,'thick',{min:1})),row('角度',h('span',{},'開始'),fin(L,'a0'),h('span',{},'終了'),fin(L,'a1')),
+   row('変数連動',fvar(L,'var')),...(L.var!=null?[row('範囲',h('span',{},'最小'),fin(L,'min',{step:'any'}),h('span',{},'最大'),fin(L,'max',{step:'any'})),h('div',{class:'hint'},'開始角から、値に応じた角度まで弧が伸びます')]:[h('div',{class:'hint'},'変数なしなら固定の弧(レッドゾーンなどに)')])))}
+ if(T==='rect')items.push(sec('四角',true,xy(L,'x','y'),row('サイズ',h('span',{},'幅'),fin(L,'w'),h('span',{},'高'),fin(L,'h')),row('描画',fck(L,'fill',false,'塗りつぶし'))));
+ if(T==='line')items.push(sec('線',true,row('始点',h('span',{},'X'),fin(L,'x1'),h('span',{},'Y'),fin(L,'y1')),row('終点',h('span',{},'X'),fin(L,'x2'),h('span',{},'Y'),fin(L,'y2'))));
+ if(T==='needle'){items.push(sec('針',true,xy(L,'x','y'),row('長さ',fin(L,'len'),h('span',{},'尻尾'),fin(L,'tail',{min:0})),row('形',fsel(L,'style',[['line','線'],['tri','三角(テーパー)']],true),...(L.style==='tri'?[h('span',{},'幅'),fin(L,'width',{min:1})]:[])),row('中心円',fin(L,'hub',{min:0}),h('span',{class:'hint'},'0で無し')),
+   row('変数',fvar(L,'var',false)),row('値の範囲',h('span',{},'最小'),fin(L,'min',{step:'any'}),h('span',{},'最大'),fin(L,'max',{step:'any'})),
+   row('角度',h('span',{},'最小時'),fin(L,'a0'),h('span',{},'最大時'),fin(L,'a1')),h('div',{class:'hint'},'0°=真上、時計回りが+。例: -135〜135 で270°スイープ')))}
+ if(T==='bar'){const seg=L.style==='seg';items.push(sec('バー',true,xy(L,'x','y'),row('サイズ',h('span',{},'幅'),fin(L,'w',{min:1}),h('span',{},'高'),fin(L,'h',{min:1})),
+   row('伸びる向き',fsel(L,'dir',[['r','右へ'],['l','左へ'],['u','上へ'],['d','下へ']])),row('見た目',fsel(L,'style',[['solid','連続バー'],['seg','セグメント(デジパネ風)'],['mark','マーカー(動く目印)']],true)),
+   ...(seg?[row('セグメント',h('span',{},'数'),fin(L,'segs',{min:1}),h('span',{},'隙間'),fin(L,'gap',{min:0}))]:[]),...(L.style==='mark'?[row('マーカー幅',fin(L,'mark',{min:1}))]:[]),
+   row('変数',fvar(L,'var',false)),row('値の範囲',h('span',{},'最小'),fin(L,'min',{step:'any'}),h('span',{},'最大'),fin(L,'max',{step:'any'}))));
+  items.push(sec('背景・警告色',true,row('背景',fck(L.bg,'on',true,'表示'),...(L.bg.on?[fcol(L.bg,'color')]:[])),...(L.style!=='mark'?[row('警告色',fck(L.warn,'on',true,'レッドゾーン'),...(L.warn.on?[fcol(L.warn,'color')]:[])),...(L.warn.on?[row('開始位置',fin(L.warn,'at',{min:0,max:100}),h('span',{class:'hint'},'範囲の何%から')) ]:[])]:[])))}
+ if(T==='text')items.push(sec('文字',true,xy(L,'x','y'),row('変数の値',fvar(L,'var')),row('前の文字',ftx(L,'pre')),
+   ...(L.var!=null?[row('後の文字',ftx(L,'suf')),row('端数処理',fsel(L,'mode',[['round','四捨五入'],['floor','切り捨て'],['ceil','切り上げ']])),row('小数桁数',fin(L,'dec',{min:0,max:6})),row('整数部の桁',fin(L,'pad',{min:0,max:8}),h('span',{class:'hint'},'足りない分は0埋め'))]:[]),
+   row('揃え',fsel(L,'align',[['l','左'],['c','中央'],['r','右']])),h('div',{class:'hint'},'表示できるのは半角英数と記号のみ(Stormworksの標準フォント)。1文字=幅5px。')));
+ const cvv=L.cond.v!=null?S.vars.find(x=>x.id===L.cond.v):null;const cB=cvv&&cvv.type==='bool';
+ items.push(sec('表示条件(警告灯など)',false,row('条件',fck(L.cond,'on',true,'条件付きで表示')),...(L.cond.on?[row('変数',fvar(L.cond,'v',true,'all',()=>{const x=S.vars.find(y=>y.id===L.cond.v);if(x&&x.type==='bool'){L.cond.op='==';if(L.cond.val!==0&&L.cond.val!==1)L.cond.val=1}})),
+   ...(cB?[row('状態',fsel(L.cond,'val',[[1,'ONのとき表示'],[0,'OFFのとき表示']]))]:[row('比較',fsel(L.cond,'op',[['<','より小さい'],['<=','以下'],['>','より大きい'],['>=','以上'],['==','等しい'],['~=','等しくない']]),fin(L.cond,'val',{step:'any'}))])]:[])));
+ items.forEach(d=>{const s=d.querySelector('summary').textContent;if(s in openState)d.open=openState[s];box.append(d)})}
+
+/* ---------- templates ---------- */
+function dotsFrom(rows,ox,oy,color){const pts={};rows.forEach((r,y)=>[...r].forEach((c,x)=>{if(c==='#')pts[(oy+y)*1024+ox+x]=color}));return pts}
+function loadTemplate(name){S=blankState();V={};SW.clear();sweepAll=false;$('#sweepall').classList.remove('on');
+ const tv=(n,ch,min,max,init,type='num')=>{const v={id:'V'+(S.nid++),name:n,ch,min,max,init,type};S.vars.push(v);V[v.id]=init;return v.id};
+ const add=(t,p)=>{const L=mkLayer(t,p);S.layers.push(L);return L};
+ if(name==='car'){S.screen={w:160,h:96,bg:'#05070b'};const sp=tv('speed',1,0,240,96),rp=tv('rpm',2,0,8000,3200),fu=tv('fuel',3,0,100,62),hb=tv('highbeam',1,0,1,0,'bool');
+  add('rect',{name:'外枠',x:0,y:0,w:159,h:95,fill:false,color:'#334155',noVar:1});
+  add('circle',{name:'スピードメーター',x:48,y:50,r:44,color:'#64748b',ticks:{on:true,a0:-135,a1:135,n:12,minor:1,lenMaj:6,lenMin:3,inset:2,colMaj:'#e2e8f0',colMin:'#64748b',lbl:true,lblMin:0,lblMax:240,lblEvery:2,lblDec:0,lblR:28,lblColor:'#e2e8f0'}});
+  add('arc',{name:'レッドゾーン',x:48,y:50,r:42,thick:2,a0:90,a1:135,color:'#ef4444',var:null,noVar:1});
+  add('needle',{name:'速度針',x:48,y:50,len:36,tail:6,style:'tri',width:3,hub:3,a0:-135,a1:135,var:sp,min:0,max:240,color:'#f43f5e'});
+  add('text',{name:'速度(数値)',x:48,y:72,var:sp,dec:0,pad:3,align:'c',color:'#f8fafc'});
+  add('text',{name:'単位',x:48,y:80,pre:'KM/H',var:null,noVar:1,align:'c',color:'#64748b'});
+  add('text',{name:'RPM',x:100,y:8,pre:'RPM ',var:rp,dec:0,pad:4,color:'#e2e8f0'});
+  add('bar',{name:'RPMバー',x:100,y:18,w:56,h:10,dir:'r',style:'seg',segs:16,gap:1,var:rp,min:0,max:8000,color:'#22d3ee',bg:{on:true,color:'#16202c'},warn:{on:true,at:80,color:'#ef4444'}});
+  add('text',{name:'FUEL見出し',x:100,y:40,pre:'FUEL',var:null,noVar:1,color:'#94a3b8'});
+  add('text',{name:'FUEL値',x:156,y:40,var:fu,suf:'%',align:'r',color:'#facc15'});
+  add('bar',{name:'燃料バー',x:100,y:50,w:56,h:6,dir:'r',var:fu,min:0,max:100,color:'#facc15',bg:{on:true,color:'#2a2410'}});
+  add('dots',{name:'燃料アイコン',pts:dotsFrom(['..#..','..#..','.###.','.###.','#####','#####','.###.'],101,70,'#facc15')});
+  add('text',{name:'燃料警告',x:112,y:72,pre:'LOW FUEL',var:null,noVar:1,color:'#ef4444',cond:{on:true,v:fu,op:'<',val:15}});
+  add('rect',{name:'ハイビーム灯',x:138,y:82,w:16,h:9,color:'#2563eb',noVar:1,cond:{on:true,v:hb,op:'==',val:1}});
+  add('text',{name:'HI',x:142,y:84,pre:'HI',var:null,noVar:1,color:'#ffffff',cond:{on:true,v:hb,op:'==',val:1}});
+  add('text',{name:'LO',x:142,y:84,pre:'LO',var:null,noVar:1,color:'#475569',cond:{on:true,v:hb,op:'==',val:0}});}
+ else if(name==='train'){S.screen={w:160,h:96,bg:'#060a10'};const sp=tv('speed',1,0,130,78),lim=tv('limit',2,0,130,95),nt=tv('notch',3,-8,5,3),bp=tv('bp',4,0,500,310),dr=tv('door',1,0,1,0,'bool');
+  add('circle',{name:'速度計',x:48,y:50,r:44,color:'#475569',ticks:{on:true,a0:-120,a1:120,n:13,minor:1,lenMaj:6,lenMin:3,inset:2,colMaj:'#e5e7eb',colMin:'#64748b',lbl:true,lblMin:0,lblMax:130,lblEvery:2,lblDec:0,lblR:27,lblColor:'#e5e7eb'}});
+  add('arc',{name:'ATC制限(連動)',x:48,y:50,r:42,thick:2,a0:-120,a1:120,var:lim,min:0,max:130,color:'#facc15'});
+  add('needle',{name:'速度針',x:48,y:50,len:37,tail:8,style:'line',hub:2,a0:-120,a1:120,var:sp,min:0,max:130,color:'#ffffff'});
+  add('text',{name:'速度',x:48,y:70,var:sp,dec:0,pad:3,align:'c',color:'#e5e7eb'});
+  add('text',{name:'単位',x:48,y:78,pre:'KM/H',var:null,noVar:1,align:'c',color:'#64748b'});
+  add('text',{name:'NOTCH見出し',x:100,y:6,pre:'NOTCH',var:null,noVar:1,color:'#94a3b8'});
+  add('text',{name:'ノッチ値',x:100,y:15,var:nt,dec:0,color:'#4ade80'});
+  add('text',{name:'BP見出し',x:116,y:34,pre:'BP KPA',var:null,noVar:1,color:'#94a3b8'});
+  add('text',{name:'BP値',x:116,y:43,var:bp,dec:0,mode:'floor',color:'#38bdf8'});
+  add('bar',{name:'BPバー',x:100,y:34,w:10,h:50,dir:'u',var:bp,min:0,max:500,color:'#38bdf8',bg:{on:true,color:'#0e1b2a'}});
+  add('rect',{name:'ドア灯',x:116,y:80,w:38,h:10,color:'#ef4444',cond:{on:true,v:dr,op:'==',val:1}});
+  add('text',{name:'ドア文字',x:122,y:83,pre:'DOOR',var:null,noVar:1,color:'#ffffff',cond:{on:true,v:dr,op:'==',val:1}});}
+ else if(name==='plane'){S.screen={w:160,h:160,bg:'#0a1018'};const ias=tv('ias',1,0,400,185),alt=tv('alt',2,0,40000,12400),hd=tv('hdg',3,0,360,70),vs=tv('vs',4,-2000,2000,600),gr=tv('gear',1,0,1,1,'bool');
+  add('text',{name:'IAS見出し',x:4,y:14,pre:'IAS KT',var:null,noVar:1,color:'#94a3b8'});
+  add('rect',{name:'IAS枠',x:3,y:24,w:34,h:112,fill:false,color:'#475569'});
+  add('bar',{name:'IASマーカー',x:4,y:25,w:32,h:110,dir:'u',style:'mark',mark:2,var:ias,min:0,max:400,color:'#fbbf24',bg:{on:true,color:'#101a26'}});
+  add('text',{name:'IAS値',x:20,y:141,var:ias,dec:0,pad:3,align:'c',color:'#fbbf24'});
+  add('text',{name:'ALT見出し',x:124,y:14,pre:'ALT FT',var:null,noVar:1,color:'#94a3b8'});
+  add('rect',{name:'ALT枠',x:123,y:24,w:34,h:112,fill:false,color:'#475569'});
+  add('bar',{name:'ALTマーカー',x:124,y:25,w:32,h:110,dir:'u',style:'mark',mark:2,var:alt,min:0,max:40000,color:'#4ade80',bg:{on:true,color:'#101a26'}});
+  add('text',{name:'ALT値',x:140,y:141,var:alt,dec:0,mode:'floor',pad:5,align:'c',color:'#4ade80'});
+  add('text',{name:'VS見出し',x:41,y:14,pre:'VS',var:null,noVar:1,color:'#94a3b8'});
+  add('bar',{name:'VSマーカー',x:42,y:24,w:8,h:112,dir:'u',style:'mark',mark:3,var:vs,min:-2000,max:2000,color:'#38bdf8',bg:{on:true,color:'#101a26'}});
+  add('line',{name:'VS中心線',x1:40,y1:80,x2:52,y2:80,color:'#94a3b8'});
+  add('text',{name:'VS値',x:46,y:141,var:vs,dec:0,mode:'floor',align:'c',color:'#38bdf8'});
+  add('circle',{name:'方位リング',x:88,y:84,r:33,color:'#64748b',ticks:{on:true,a0:0,a1:360,n:12,minor:2,lenMaj:5,lenMin:2,inset:1,colMaj:'#e2e8f0',colMin:'#64748b',lbl:true,lblMin:0,lblMax:360,lblEvery:3,lblDec:0,lblR:20,lblColor:'#e2e8f0'}});
+  add('needle',{name:'方位針',x:88,y:84,len:28,tail:0,style:'tri',width:5,hub:0,a0:0,a1:360,var:hd,min:0,max:360,color:'#f43f5e'});
+  add('text',{name:'HDG値',x:88,y:126,pre:'HDG ',var:hd,dec:0,mode:'floor',pad:3,align:'c',color:'#f8fafc'});
+  add('text',{name:'脚(下げ)',x:88,y:148,pre:'GEAR DN',var:null,noVar:1,color:'#4ade80',align:'c',cond:{on:true,v:gr,op:'==',val:1}});
+  add('text',{name:'脚(上げ)',x:88,y:148,pre:'GEAR UP',var:null,noVar:1,color:'#64748b',align:'c',cond:{on:true,v:gr,op:'==',val:0}});}
+ else {S.screen={w:96,h:96,bg:'#000000'}}
+ S.sel=S.layers.length?S.layers[S.layers.length-1].id:null;hist=[];hi=-1;afterLoad();commit();toast(name==='blank'?'白紙にしました(「元に戻す」で復帰)':'サンプルを読み込みました')}
+
+/* ---------- misc UI wiring ---------- */
+const PRESETS=[['32x32','1×1 (32×32)'],['64x32','2×1 (64×32)'],['64x64','2×2 (64×64)'],['96x64','3×2 (96×64)'],['96x96','3×3 (96×96)'],['128x96','4×3 (128×96)'],['160x96','5×3 (160×96)'],['160x160','5×5 (160×160)'],['288x160','9×5 (288×160)'],['','カスタム']];
+$('#preset').append(...PRESETS.map(([v,t])=>h('option',{value:v},t)));
+function syncScreenUI(){const k=S.screen.w+'x'+S.screen.h;const p=$('#preset');p.value=PRESETS.some(x=>x[0]===k)?k:'';$('#sw').value=S.screen.w;$('#sh').value=S.screen.h;$('#sbg').value=S.screen.bg}
+function setScreen(w,h){S.screen.w=clamp(Math.round(w)||32,8,512);S.screen.h=clamp(Math.round(h)||32,8,512);syncScreenUI();relayout();gen()}
+$('#preset').onchange=e=>{if(!e.target.value)return;const [w,h]=e.target.value.split('x').map(Number);setScreen(w,h);commit()};
+$('#sw').onchange=()=>{setScreen(+$('#sw').value,S.screen.h);commit()};$('#sh').onchange=()=>{setScreen(S.screen.w,+$('#sh').value);commit()};
+$('#sbg').addEventListener('input',e=>{S.screen.bg=e.target.value;requestRender();gen()});$('#sbg').addEventListener('change',commit);
+$('#undo').onclick=undo;$('#redo').onclick=redo;
+$('#tpl').onchange=e=>{if(e.target.value)loadTemplate(e.target.value);e.target.value=''};
+$('#pvbtn').onclick=()=>{previewMode=!previewMode;document.body.classList.toggle('pv',previewMode);$('#pvbtn').textContent=previewMode?'■ 編集に戻る':'▶ プレビュー表示';$('#pvbtn').classList.toggle('primary',!previewMode);$('#pvbtn').classList.toggle('on',previewMode);ghost=null;relayout()};
+$('#zin').onclick=()=>{zoomFit=false;zoom=Math.min(40,zoom+1);requestRender(false)};$('#zout').onclick=()=>{zoomFit=false;zoom=Math.max(1,zoom-1);requestRender(false)};$('#zfit').onclick=()=>{zoomFit=true;relayout()};
+$('#gridbtn').onclick=()=>{showGrid=!showGrid;$('#gridbtn').classList.toggle('on',showGrid);requestRender(false)};
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===t));const lua=t.dataset.pane==='lua';$('#varpane').hidden=lua;$('#luapanewrap').hidden=!lua;if(lua)gen()});
+const LOBOX=[['#o_comments','comments'],['#o_min','minify'],['#o_bg','bg'],['#o_opt','opt']];
+function syncLO(){for(const [id,k] of LOBOX)$(id).checked=!!LO[k];$('#o_limit').value=String(LO.limit)}
+for(const [id,k] of LOBOX){$(id).onchange=e=>{LO[k]=e.target.checked;gen();save()}}
+$('#o_limit').onchange=e=>{LO.limit=+e.target.value;gen();save()};syncLO();
+$('#copylua').onclick=async()=>{const t=$('#luaout');t.value=genLua(LO);try{await navigator.clipboard.writeText(t.value);toast('Luaをコピーしました')}catch(e){t.select();try{document.execCommand('copy');toast('Luaをコピーしました')}catch(_){toast('選択しました。Ctrl+Cでコピーしてください')}}};
+$('#proj').onclick=()=>{$('#projtxt').value=JSON.stringify({S,V});$('#modal').hidden=false};
+$('#projclose').onclick=()=>$('#modal').hidden=true;
+$('#projcopy').onclick=async()=>{const t=$('#projtxt');try{await navigator.clipboard.writeText(t.value);toast('コピーしました')}catch(e){t.select()}};
+$('#projload').onclick=()=>{try{const o=JSON.parse($('#projtxt').value);if(!o.S||!o.S.layers)throw 0;S=o.S;V=o.V||{};fixVals();SW.clear();hist=[];hi=-1;afterLoad();commit();$('#modal').hidden=true;toast('読み込みました')}catch(e){toast('JSONを読み込めませんでした')}};
+$('#imgfile').onchange=e=>{const f=e.target.files[0];e.target.value='';if(!f)return;const url=URL.createObjectURL(f);const img=new Image();img.onload=()=>{
+  const W=S.screen.w,H=S.screen.h,sc=Math.min(W/img.width,H/img.height),w=Math.max(1,Math.round(img.width*sc)),hh=Math.max(1,Math.round(img.height*sc));
+  const c=document.createElement('canvas');c.width=w;c.height=hh;const x=c.getContext('2d');x.drawImage(img,0,0,w,hh);const d=x.getImageData(0,0,w,hh).data;const pts={},lv=6,q=v=>Math.round(Math.round(v/255*(lv-1))*255/(lv-1));
+  const ox=Math.floor((W-w)/2),oy=Math.floor((H-hh)/2);for(let j=0;j<hh;j++)for(let i=0;i<w;i++){const k=(j*w+i)*4;if(d[k+3]<128)continue;pts[(oy+j)*1024+ox+i]=toHex(q(d[k]),q(d[k+1]),q(d[k+2]))}
+  const L=mkLayer('dots',{pts,name:'画像 '+(S.counters.dots||1)});const i=S.sel?S.layers.findIndex(l=>l.id===S.sel):S.layers.length-1;S.layers.splice(i+1,0,L);S.sel=L.id;URL.revokeObjectURL(url);commit();buildLayers();buildInspector();requestRender();gen();toast('ドットレイヤーを作りました')};img.src=url};
+document.addEventListener('keydown',e=>{const tg=e.target.tagName;if(tg==='INPUT'||tg==='TEXTAREA'||tg==='SELECT')return;
+ if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();e.shiftKey?redo():undo();return}
+ if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'){e.preventDefault();redo();return}
+ if(e.ctrlKey||e.metaKey||e.altKey)return;
+ const L=selLayer();
+ if((e.key==='Delete'||e.key==='Backspace')&&L){$('#l_del').click();return}
+ if(L&&!L.locked&&e.key.startsWith('Arrow')){e.preventDefault();const s=e.shiftKey?5:1;moveBy(L,e.key==='ArrowLeft'?-s:e.key==='ArrowRight'?s:0,e.key==='ArrowUp'?-s:e.key==='ArrowDown'?s:0);commit();requestRender();gen();buildInspector();return}
+ const m={v:'select',p:'pencil',e:'eraser',i:'picker',o:'circle',a:'arc',r:'rect',l:'line',n:'needle',b:'bar',t:'text'}[e.key.toLowerCase()];if(m&&!previewMode)setTool(m)});
+
+function afterLoad(){S.sel=S.layers.find(l=>l.id===S.sel)?S.sel:null;syncScreenUI();buildPal();buildLayers();buildInspector();buildVars();updUndo();relayout();dirtyR=true;requestRender();gen()}
+
+/* ---------- boot ---------- */
+(function boot(){let ok=false;try{const raw=localStorage.getItem('meter-dot-studio.v1');if(raw){const o=JSON.parse(raw);if(o.S&&o.S.layers){S=o.S;V=o.V||{};curColor=o.curColor||curColor;recent=o.pal||[];if(o.lo)Object.assign(LO,o.lo);syncLO();fixVals();ok=true;hist=[JSON.stringify(S)];hi=0;afterLoad();$('#curcolor').value=curColor}}}catch(e){}
+ if(!ok){loadTemplate('car')}
+ setCur(curColor);setTool('select');
+ window.__app={S:()=>S,V:()=>V,genLua,loadTemplate,LO,setTool,render:()=>{dirtyR=true;paint()}}})();
+</script>
+
+</body>
+</html>
