@@ -4,7 +4,7 @@
 
 Stormworks 用のメーター・デジパネを、**ペイント感覚で描いて、その場で動かして、そのままLuaにできる**ブラウザツールです。
 
-> **▶ 今すぐ使う: https://YOUR-USERNAME.github.io/Stormworks-Meter-Dot-Studio/**
+> **▶ 今すぐ使う: https://KomachiRaisu.github.io/Stormworks-Meter-Dot-Studio/**
 > (インストール不要。ブラウザで開くだけです)
 
 ![スクリーンショット](docs/screenshot.png)
