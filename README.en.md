@@ -4,7 +4,7 @@
 
 A browser tool for making Stormworks gauges and digital panels: **paint it, move the values live, and export it as Lua, all on one screen.**
 
-> **▶ Try it: https://YOUR-USERNAME.github.io/Stormworks-Meter-Dot-Studio/**
+> **▶ Try it: https://KomachiRaisu.github.io/Stormworks-Meter-Dot-Studio/**
 > (No install. Just open it in a browser.)
 
 ![Screenshot](docs/screenshot.png)
