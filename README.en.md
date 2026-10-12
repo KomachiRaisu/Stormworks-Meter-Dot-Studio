@@ -21,6 +21,8 @@ The usual workflow was four separate steps: draw a base in GIMP, convert it to L
 - **Needles**: rotate by value, with configurable angle range (line or tapered triangle)
 - **Bars**: solid, segmented (digital-panel style), or moving marker, with a warning color zone
 - **Text**: show a variable with round / floor / ceil, decimal places and zero padding
+- **Expressions**: any numeric field accepts expressions such as `speed*3`, `|value|`, `min(a,b)`, not just a bare variable
+- **Negative values**: zero-based arcs/bars (with a separate negative color) and symmetric rounding for negative numbers
 - **Per-element color and opacity**
 - **Layers**: show/hide, lock, drag to reorder, duplicate
 - **Number and Bool variables**: drive them with sliders / ON-OFF toggles (ranges are editable). Bool variables control layer visibility (warning lamps etc.)
@@ -48,8 +50,7 @@ It is a single `index.html` with no build step. Open it in a browser. Work is au
 
 ## Disclaimer
 
-Stormworks: Build and Rescue is a trademark of Sunfox Games. This is an **unofficial fan-made tool** and is not affiliated with Sunfox Games.
-I’m worried about copying someone else’s work, or repeating something that’s already been done, or ending up with a duplicate, so please let me know straight away if that’s the case!! If there’s a problem, I’ll take it down straight away!!!
+Stormworks: Build and Rescue is a trademark of Sunfox Games. This is an **unofficial fan-made tool** and is not affiliated with Sunfox Games.I’m worried that this might be a copycat of someone else’s work, or that it’s already been done, or that it overlaps with something else, so please let me know straight away if that’s the case!! If there’s a problem, I’ll take it down straight away!!! Also, as this was created using AI (Claude), there might be some glitches. I’ve tested it on PonyIDE just in case, so please let me know if you spot any issues.
 
 ## License
 

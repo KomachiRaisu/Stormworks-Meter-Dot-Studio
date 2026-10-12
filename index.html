@@ -134,8 +134,6 @@ body.pv #tools,body.pv aside{opacity:.35;pointer-events:none}
 }
 </style>
 
-</head>
-<body>
 <div id="app">
 <header>
   <div class="brand"><b>Meter Dot Studio</b><span>描く → Lua → プレビュー を1画面で</span></div>
@@ -280,20 +278,20 @@ function merge(a,b){for(const k in b){a[k]=isObj(b[k])&&isObj(a[k])?Object.assig
 const DEF={
  dots:()=>({pts:{}}),
  circle:L=>({x:48,y:48,r:30,ring:true,fill:false,ticks:{on:false,a0:-135,a1:135,n:10,minor:4,lenMaj:6,lenMin:3,inset:1,colMaj:L.color,colMin:L.color,lbl:false,lblMin:0,lblMax:100,lblEvery:1,lblDec:0,lblR:18,lblColor:L.color}}),
- arc:()=>({x:48,y:48,r:30,thick:3,a0:-135,a1:135,var:null,min:0,max:100}),
+ arc:()=>({x:48,y:48,r:30,thick:3,a0:-135,a1:135,expr:'',zero:false,min:0,max:100}),
  rect:()=>({x:10,y:10,w:30,h:16,fill:true}),
  line:()=>({x1:10,y1:10,x2:50,y2:30}),
- needle:()=>({x:48,y:48,len:30,tail:6,style:'line',width:3,hub:0,a0:-135,a1:135,var:null,min:0,max:100}),
- bar:()=>({x:10,y:10,w:50,h:8,dir:'r',style:'solid',segs:10,gap:1,mark:2,var:null,min:0,max:100,bg:{on:true,color:'#1e293b'},warn:{on:false,at:80,color:'#ef4444'}}),
- text:()=>({x:10,y:10,pre:'',suf:'',var:null,mode:'round',dec:0,pad:0,align:'l'})
+ needle:()=>({x:48,y:48,len:30,tail:6,style:'line',width:3,hub:0,a0:-135,a1:135,expr:'',min:0,max:100}),
+ bar:()=>({x:10,y:10,w:50,h:8,dir:'r',style:'solid',segs:10,gap:1,mark:2,expr:'',zero:false,neg:{on:false,color:'#f97316'},min:0,max:100,bg:{on:true,color:'#1e293b'},warn:{on:false,at:80,color:'#ef4444'}}),
+ text:()=>({x:10,y:10,pre:'',suf:'',expr:'',mode:'round',dec:0,pad:0,align:'l'})
 };
 const VARTYPES=new Set(['arc','needle','bar','text']);
-function ensureVar(){let v=S.vars.find(x=>x.type!=='bool');if(!v){v={id:'V'+(S.nid++),name:'value',ch:S.vars.filter(x=>x.type!=='bool').length+1,min:0,max:100,init:50,type:'num'};S.vars.push(v);V[v.id]=50;buildVars()}return v.id}
+function ensureVar(){let v=S.vars.find(x=>x.type!=='bool');if(!v){v={id:'V'+(S.nid++),name:'value',ch:S.vars.filter(x=>x.type!=='bool').length+1,min:0,max:100,init:50,type:'num'};S.vars.push(v);V[v.id]=50;buildVars()}return exprName(v)}
 function mkLayer(type,props={},dry=false){
  const col=props.color||curColor;
- const L={id:dry?'ghost':'L'+(S.nid++),type,name:'',visible:true,locked:false,color:col,alpha:255,cond:{on:false,v:null,op:'<',val:0}};
+ const L={id:dry?'ghost':'L'+(S.nid++),type,name:'',visible:true,locked:false,color:col,alpha:255,cond:{on:false,expr:'',op:'<',val:0}};
  merge(L,DEF[type](L));merge(L,props);
- if(!dry){ if(VARTYPES.has(type)&&L.var==null&&!('noVar' in props))L.var=ensureVar(); delete L.noVar;
+ if(!dry){ if(VARTYPES.has(type)&&!hasE(L)&&!('noVar' in props))L.expr=ensureVar(); delete L.noVar;
    if(!L.name){S.counters[type]=(S.counters[type]||0)+1;L.name=TYPES[type]+' '+S.counters[type]} }
  else L.name='ghost';
  return L}
@@ -312,14 +310,73 @@ let recent=[];
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>t.classList.remove('show'),2200)}
 
 /* ---------- value helpers ---------- */
-const getV=id=>(id!=null&&V[id]!=null)?V[id]:0;
 function norm(v,a,b){return b===a?0:clamp((v-a)/(b-a),0,1)}
-function cFixed(v,d){const k=Math.pow(10,d),x=v*k,f=Math.floor(x),df=x-f;let r;if(df===.5)r=f%2===0?f:f+1;else r=Math.round(x);return (r/k).toFixed(d)}
-function fmtNum(v,mode,dec,pad){const k=Math.pow(10,dec);let x=v;if(mode==='floor')x=Math.floor(v*k+1e-9)/k;else if(mode==='ceil')x=Math.ceil(v*k-1e-9)/k;
-  let s=cFixed(x,dec);if(pad>0){const W=pad+(dec>0?dec+1:0);const neg=s[0]==='-';let b=neg?s.slice(1):s;b=b.padStart(neg?W-1:W,'0');s=(neg?'-':'')+b}return s}
-function textStr(L){return L.var==null?L.pre:L.pre+fmtNum(getV(L.var),L.mode,L.dec,L.pad)+L.suf}
-function condOk(L){const c=L.cond;if(!c||!c.on||c.v==null)return true;const vv=S.vars.find(x=>x.id===c.v);const v=getV(c.v);if(vv&&vv.type==='bool')return (v!==0)===(c.val>=.5);switch(c.op){case'>':return v>c.val;case'<':return v<c.val;case'>=':return v>=c.val;case'<=':return v<=c.val;case'==':return v===c.val;case'~=':return v!==c.val}return true}
-const arcStep=r=>+clamp(40/Math.max(r,1),.2,5).toFixed(2);
+function lblFmt(x,dec){const k=Math.pow(10,dec);return (Math.floor(x*k+.5)/k).toFixed(dec)}
+/* ---- expression engine: 値の式 (例: speed*3, |value|, max(rpm,0)) ---- */
+const exprName=v=>{let n=String(v.name||'v').replace(/[^A-Za-z0-9_]/g,'_');if(!n||/^[0-9]/.test(n))n='v'+n;return n};
+let exprSig='',exprCache=new Map();
+const FUNCS={abs:{js:Math.abs,lua:'math.abs',n:1},sqrt:{js:Math.sqrt,lua:'math.sqrt',n:1},floor:{js:Math.floor,lua:'math.floor',n:1},ceil:{js:Math.ceil,lua:'math.ceil',n:1},
+ sin:{js:Math.sin,lua:'math.sin',n:1},cos:{js:Math.cos,lua:'math.cos',n:1},tan:{js:Math.tan,lua:'math.tan',n:1},deg:{js:x=>x*180/Math.PI,lua:'math.deg',n:1},rad:{js:x=>x*Math.PI/180,lua:'math.rad',n:1},
+ atan:{js:(y,x)=>x===undefined?Math.atan(y):Math.atan2(y,x),lua:'math.atan',n:[1,2]},
+ min:{js:Math.min,lua:'math.min',n:[2,9]},max:{js:Math.max,lua:'math.max',n:[2,9]},
+ round:{js:x=>Math.floor(x+.5),lua:a=>`math.floor(${a[0]}+.5)`,n:1},
+ sign:{js:x=>x>0?1:x<0?-1:0,lua:a=>`(${a[0]}>0 and 1 or ${a[0]}<0 and -1 or 0)`,n:1},
+ clamp:{js:(x,a,b)=>Math.max(a,Math.min(b,x)),lua:a=>`math.max(${a[1]},math.min(${a[2]},${a[0]}))`,n:3}};
+function parseExpr(src){
+ const re=/\s*(?:(\d+\.?\d*(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?)|([A-Za-z_]\w*)|(\S))/y;const T=[];let i=0;
+ while(i<src.length){re.lastIndex=i;const m=re.exec(src);if(!m)break;if(m[1]!==undefined)T.push({k:'n',v:parseFloat(m[1])});else if(m[2]!==undefined)T.push({k:'i',v:m[2]});else T.push({k:'o',v:m[3]});i=re.lastIndex}
+ let pos=0,absD=0;const peek=()=>T[pos],isOp=c=>T[pos]&&T[pos].k==='o'&&T[pos].v===c;
+ const expect=c=>{if(!isOp(c))throw new Error(`「${c}」が必要です`);pos++};
+ function add(){let l=mul();for(;;){if(isOp('+')||isOp('-')){const op=T[pos++].v;l={t:'b',op,l,r:mul()}}else break}return l}
+ function mul(){let l=un();for(;;){if(isOp('*')||isOp('/')||isOp('%')){const op=T[pos++].v;l={t:'b',op,l,r:un()}}else break}return l}
+ function un(){if(isOp('-')){pos++;return{t:'u',x:un()}}if(isOp('+')){pos++;return un()}return pw()}
+ function pw(){const b=atom();if(isOp('^')){pos++;return{t:'b',op:'^',l:b,r:un()}}return b}
+ function atom(){const t=T[pos];if(!t)throw new Error('式が途中で終わっています');
+  if(t.k==='n'){pos++;return{t:'n',v:t.v}}
+  if(t.k==='i'){pos++;if(isOp('(')){pos++;const f=FUNCS[t.v];if(!f)throw new Error(`関数 ${t.v} は使えません`);const args=[];if(!isOp(')')){for(;;){args.push(add());if(isOp(',')){pos++;continue}break}}expect(')');
+     const n=f.n,ok=Array.isArray(n)?(args.length>=n[0]&&args.length<=n[1]):args.length===n;if(!ok)throw new Error(`${t.v}() の引数の数が違います`);return{t:'f',name:t.v,args}}
+   const v=S.vars.find(x=>exprName(x)===t.v);if(v)return{t:'v',id:v.id,name:t.v};if(t.v==='pi')return{t:'n',v:Math.PI};throw new Error(`未定義の変数: ${t.v}`)}
+  if(t.k==='o'&&t.v==='('){pos++;const e=add();expect(')');return e}
+  if(t.k==='o'&&t.v==='|'){pos++;absD++;const e=add();if(!isOp('|'))throw new Error('絶対値の「|」が閉じていません');pos++;absD--;return{t:'f',name:'abs',args:[e]}}
+  throw new Error(`「${t.v}」は使えません`)}
+ const ast=add();if(pos<T.length)throw new Error(`「${T[pos].v}」の位置が不正です`);return ast}
+function evalNode(n){switch(n.t){
+ case'n':return()=>n.v;
+ case'v':return()=>V[n.id]??0;
+ case'u':{const f=evalNode(n.x);return()=>-f()}
+ case'b':{const l=evalNode(n.l),r=evalNode(n.r);switch(n.op){case'+':return()=>l()+r();case'-':return()=>l()-r();case'*':return()=>l()*r();case'/':return()=>l()/r();case'%':return()=>{const a=l(),b=r();return a-Math.floor(a/b)*b};default:return()=>Math.pow(l(),r())}}
+ case'f':{const as=n.args.map(evalNode),F=FUNCS[n.name].js;return()=>F(...as.map(f=>f()))}}}
+const PREC={'+':1,'-':1,'*':2,'/':2,'%':2,'^':4};
+function luaNode(n,nm){switch(n.t){
+ case'n':return[String(+n.v.toPrecision(12)),9];
+ case'v':{const v=S.vars.find(x=>x.id===n.id);const name=nm[n.id]||'0';return v&&v.type==='bool'?[`(${name} and 1 or 0)`,9]:[name,9]}
+ case'u':{let[x,p]=luaNode(n.x,nm);if(p<3||x[0]==='-')x=`(${x})`;return['-'+x,3]}
+ case'b':{const pr=PREC[n.op];let[l,lp]=luaNode(n.l,nm),[r,rp]=luaNode(n.r,nm);if(lp<pr||(n.op==='^'&&lp<=pr))l=`(${l})`;if((n.op==='^'?rp<3:rp<=pr)||r[0]==='-')r=`(${r})`;return[l+n.op+r,pr]}
+ case'f':{const a=n.args.map(x=>luaNode(x,nm)[0]),F=FUNCS[n.name];return[typeof F.lua==='function'?F.lua(a):`${F.lua}(${a.join(',')})`,9]}}}
+function collectIds(n,set){if(n.t==='v')set.add(n.id);if(n.x)collectIds(n.x,set);if(n.l){collectIds(n.l,set);collectIds(n.r,set)}if(n.args)n.args.forEach(a=>collectIds(a,set))}
+const EMPTY={fn:null,err:null,ids:new Set(),lua:()=>'0',sole:null,empty:true};
+function compileExpr(src){src=(src||'').trim();if(!src)return EMPTY;
+ const sig=S.vars.map(v=>v.id+':'+exprName(v)+':'+v.type).join('|');if(sig!==exprSig){exprSig=sig;exprCache=new Map()}
+ let c=exprCache.get(src);if(c)return c;
+ try{const ast=parseExpr(src),ids=new Set();collectIds(ast,ids);c={ast,fn:evalNode(ast),ids,err:null,lua:nm=>luaNode(ast,nm)[0],sole:ast.t==='v'?ast.id:null}}
+ catch(e){c={fn:null,err:e.message,ids:new Set(),lua:()=>'0',sole:null}}
+ exprCache.set(src,c);return c}
+const hasE=L=>!!(L.expr&&L.expr.trim());
+function getE(src){const c=compileExpr(src);if(!c.fn)return 0;const v=c.fn();return Number.isFinite(v)?v:0}
+function migrate(st){const nameOf=id=>{const v=st.vars.find(x=>x.id===id);return v?exprName(v):''};
+ for(const L of st.layers){if('var' in L){if(L.expr===undefined)L.expr=L.var?nameOf(L.var):'';delete L.var}
+  if(L.cond&&'v' in L){if(L.cond.expr===undefined)L.cond.expr=L.cond.v?nameOf(L.cond.v):'';delete L.cond.v}}}
+function renameRefs(a,b){const re=new RegExp('\\b'+a+'\\b','g');for(const L of S.layers){if(L.expr)L.expr=L.expr.replace(re,b);if(L.cond&&L.cond.expr)L.cond.expr=L.cond.expr.replace(re,b)}}
+/* ---- number formatting (負の値も自然に: 0方向への切り捨て / 0から遠ざける切り上げ / 四捨五入は絶対値で) ---- */
+function fmtNum(v,mode,dec,pad){const k=Math.pow(10,dec);let t=v*k;
+ if(mode==='floor')t=t<0?-Math.floor(-t+1e-9):Math.floor(t+1e-9);else if(mode==='ceil')t=t<0?-Math.ceil(-t-1e-9):Math.ceil(t-1e-9);else t=t<0?-Math.floor(.5-t):Math.floor(t+.5);
+ const r=t/k;if(pad>0){const W=pad+(dec>0?dec+1:0);return (r<0?'-':'')+Math.abs(r).toFixed(dec).padStart(W,'0')}return r.toFixed(dec)}
+function textStr(L){return !hasE(L)?L.pre:L.pre+fmtNum(getE(L.expr),L.mode,L.dec,L.pad)+L.suf}
+function condOk(L){const c=L.cond;if(!c||!c.on||!c.expr||!c.expr.trim())return true;const cc=compileExpr(c.expr);if(!cc.fn)return true;
+ if(cc.sole){const vv=S.vars.find(x=>x.id===cc.sole);if(vv&&vv.type==='bool')return ((V[cc.sole]||0)!==0)===(c.val>=.5)}
+ const v=getE(c.expr);switch(c.op){case'>':return v>c.val;case'<':return v<c.val;case'>=':return v>=c.val;case'<=':return v<=c.val;case'==':return v===c.val;case'~=':return v!==c.val}return true}
+const arcStep=r=>+clamp(34/Math.max(r,1),.05,5).toFixed(3);
+function arcRings(L){const th=Math.max(1,L.thick),nr=Math.max(0,Math.ceil((th-1)/.6-1e-9));return{nr,dq:nr?+((th-1)/nr).toFixed(4):0}}
 function barN(L){return(L.dir==='r'||L.dir==='l')?L.w:L.h}
 function barRect(L,a,b){const N=barN(L);switch(L.dir){case'r':return[L.x+a,L.y,b-a,L.h];case'l':return[L.x+N-b,L.y,b-a,L.h];case'u':return[L.x,L.y+N-b,L.w,b-a];default:return[L.x,L.y+a,L.w,b-a]}}
 function segGeom(L){const n=Math.max(1,L.segs|0),g=Math.max(0,L.gap),N=barN(L),len=(N-g*(n-1))/n;return{n,g,len,step:len+g}}
@@ -333,24 +390,30 @@ function drawLayer(R,L){
   if(L.ring){R.col(L.color,A);L.fill?R.circF(L.x,L.y,L.r):R.circO(L.x,L.y,L.r)}
   const T=L.ticks;if(T.on&&T.n>0){const full=Math.abs(T.a1-T.a0)>=360,M=T.minor+1,TT=T.n*M,last=full?TT-1:TT,RO=L.r-T.inset;
    for(let i=0;i<=last;i++){const a=rad(T.a0+(T.a1-T.a0)*i/TT),s=Math.sin(a),c=Math.cos(a),maj=i%M===0,l=maj?T.lenMaj:T.lenMin;R.col(maj?T.colMaj:T.colMin,A);R.line(L.x+s*RO,L.y-c*RO,L.x+s*(RO-l),L.y-c*(RO-l))}
-   if(T.lbl){const lastL=full?T.n-1:T.n;R.col(T.lblColor,A);for(let i=0;i<=lastL;i+=Math.max(1,T.lblEvery|0)){const a=rad(T.a0+(T.a1-T.a0)*i/T.n),t=cFixed(T.lblMin+(T.lblMax-T.lblMin)*i/T.n,T.lblDec);
+   if(T.lbl){const lastL=full?T.n-1:T.n;R.col(T.lblColor,A);for(let i=0;i<=lastL;i+=Math.max(1,T.lblEvery|0)){const a=rad(T.a0+(T.a1-T.a0)*i/T.n),t=lblFmt(T.lblMin+(T.lblMax-T.lblMin)*i/T.n,T.lblDec);
      R.text(Math.floor(L.x+Math.sin(a)*T.lblR-t.length*2.5+.5),Math.floor(L.y-Math.cos(a)*T.lblR-2.5+.5),t)}}}
   break}
- case'arc':{R.col(L.color,A);const dir=(L.a1>=L.a0)?1:-1,st=dir*arcStep(L.r);const e=L.var!=null?L.a0+norm(getV(L.var),L.min,L.max)*(L.a1-L.a0):L.a1,lim=e+dir*.001;
-  for(let k=0;k<Math.max(1,L.thick);k++){const q=L.r-k;for(let a=L.a0;dir>0?a<=lim:a>=lim;a+=st){const d=rad(a);R.px(Math.floor(L.x+q*Math.sin(d)+.5),Math.floor(L.y-q*Math.cos(d)+.5))}}break}
+ case'arc':{R.col(L.color,A);const he=hasE(L),sw=L.a1-L.a0;let s0=L.a0,e=L.a1;
+  if(he){e=L.a0+norm(getE(L.expr),L.min,L.max)*sw;if(L.zero)s0=+nf(L.a0+norm(0,L.min,L.max)*sw)}
+  if(he&&Math.abs(e-s0)<=.01)break;
+  const dir=he&&L.zero?(e<s0?-1:1):(sw>=0?1:-1),st=dir*arcStep(L.r),lim=e+dir*.001,g=arcRings(L);
+  for(let a=s0;dir>0?a<=lim:a>=lim;a+=st){const d=rad(a),s=Math.sin(d),c=Math.cos(d);for(let k=0;k<=g.nr;k++){const q=L.r-k*g.dq;R.px(Math.floor(L.x+q*s+.5),Math.floor(L.y-q*c+.5))}}break}
  case'rect':R.col(L.color,A);L.fill?R.rectF(L.x,L.y,L.w,L.h):R.rect(L.x,L.y,L.w,L.h);break;
  case'line':R.col(L.color,A);R.line(L.x1,L.y1,L.x2,L.y2);break;
- case'needle':{const f=norm(getV(L.var),L.min,L.max),a=rad(L.a0+f*(L.a1-L.a0)),s=Math.sin(a),c=Math.cos(a);R.col(L.color,A);
+ case'needle':{const f=norm(getE(L.expr),L.min,L.max),a=rad(L.a0+f*(L.a1-L.a0)),s=Math.sin(a),c=Math.cos(a);R.col(L.color,A);
   const tx=L.x+s*L.len,ty=L.y-c*L.len;
   if(L.style==='tri'){const bx=L.x-s*L.tail,by=L.y+c*L.tail,hw=L.width/2;R.tri(tx,ty,bx+c*hw,by+s*hw,bx-c*hw,by-s*hw)}
   else R.line(L.x-s*L.tail,L.y+c*L.tail,tx,ty);
   if(L.hub>0)R.circF(L.x,L.y,L.hub);break}
- case'bar':{const N=barN(L),f=norm(getV(L.var),L.min,L.max),rc=(a,b)=>barRect(L,a,b);
-  if(L.style==='seg'){const g=segGeom(L),k=Math.floor(f*g.n+.5),WI=Math.ceil(g.n*L.warn.at/100-1e-9);
-   for(let i=0;i<g.n;i++){const a=Math.floor(i*g.step+.5),b=Math.floor(i*g.step+g.len+.5);
-    if(i<k){R.col(L.warn.on&&i>=WI?L.warn.color:L.color,A);R.rectF(...rc(a,b))}else if(L.bg.on){R.col(L.bg.color,A);R.rectF(...rc(a,b))}}}
+ case'bar':{const N=barN(L),f=norm(getE(L.expr),L.min,L.max),rc=(a,b)=>barRect(L,a,b),z0=norm(0,L.min,L.max),zero=!!L.zero&&L.style!=='mark';
+  const mainC=zero&&L.neg&&L.neg.on&&f<z0?L.neg.color:L.color;
+  if(L.style==='seg'){const g=segGeom(L),k=Math.floor(f*g.n+.5),WI=Math.ceil(g.n*L.warn.at/100-1e-9),lo=Math.min(f,z0),hi=Math.max(f,z0);
+   for(let i=0;i<g.n;i++){const a=Math.floor(i*g.step+.5),b=Math.floor(i*g.step+g.len+.5),m=(i+.5)/g.n;
+    const lit=zero?(m>lo&&m<=hi):i<k;
+    if(lit){R.col(zero?mainC:(L.warn.on&&i>=WI?L.warn.color:L.color),A);R.rectF(...rc(a,b))}else if(L.bg.on){R.col(L.bg.color,A);R.rectF(...rc(a,b))}}}
   else{if(L.bg.on){R.col(L.bg.color,A);R.rectF(L.x,L.y,L.w,L.h)}
    if(L.style==='mark'){const t=Math.max(1,L.mark),n=Math.floor(f*(N-t)+.5);R.col(L.color,A);R.rectF(...rc(n,n+t))}
+   else if(zero){const n=Math.floor(f*N+.5),zp=Math.floor(z0*N+.5),a=Math.min(n,zp),b=Math.max(n,zp);if(b>a){R.col(mainC,A);R.rectF(...rc(a,b))}}
    else{const n=Math.floor(f*N+.5),wz=Math.round(L.warn.at/100*N);
     if(L.warn.on){const m=Math.min(n,wz);if(m>0){R.col(L.color,A);R.rectF(...rc(0,m))}if(n>wz){R.col(L.warn.color,A);R.rectF(...rc(wz,n))}}
     else if(n>0){R.col(L.color,A);R.rectF(...rc(0,n))}}}
@@ -365,7 +428,7 @@ function bbox(L){switch(L.type){
  case'circle':case'arc':return[L.x-L.r,L.y-L.r,L.x+L.r,L.y+L.r];
  case'rect':case'bar':return[L.x,L.y,L.x+L.w,L.y+L.h];
  case'line':return[Math.min(L.x1,L.x2),Math.min(L.y1,L.y2),Math.max(L.x1,L.x2),Math.max(L.y1,L.y2)];
- case'needle':{const f=norm(getV(L.var),L.min,L.max),a=rad(L.a0+f*(L.a1-L.a0)),s=Math.sin(a),c=Math.cos(a);const xs=[L.x,L.x+s*L.len,L.x-s*L.tail],ys=[L.y,L.y-c*L.len,L.y+c*L.tail];return[Math.floor(Math.min(...xs)),Math.floor(Math.min(...ys)),Math.ceil(Math.max(...xs)),Math.ceil(Math.max(...ys))]}
+ case'needle':{const f=norm(getE(L.expr),L.min,L.max),a=rad(L.a0+f*(L.a1-L.a0)),s=Math.sin(a),c=Math.cos(a);const xs=[L.x,L.x+s*L.len,L.x-s*L.tail],ys=[L.y,L.y-c*L.len,L.y+c*L.tail];return[Math.floor(Math.min(...xs)),Math.floor(Math.min(...ys)),Math.ceil(Math.max(...xs)),Math.ceil(Math.max(...ys))]}
  case'text':{const n=textStr(L).length,w=n*5,x=L.align==='c'?Math.floor(L.x-w/2+.5):L.align==='r'?L.x-w:L.x;return[x,L.y,x+w-1,L.y+4]}}}
 function segDist(px,py,x0,y0,x1,y1){const dx=x1-x0,dy=y1-y0,l=dx*dx+dy*dy;let t=l?((px-x0)*dx+(py-y0)*dy)/l:0;t=clamp(t,0,1);return Math.hypot(px-(x0+t*dx),py-(y0+t*dy))}
 function hit(L,x,y){switch(L.type){
@@ -373,7 +436,7 @@ function hit(L,x,y){switch(L.type){
  case'circle':return Math.hypot(x-L.x,y-L.y)<=L.r+2;
  case'arc':return Math.abs(Math.hypot(x-L.x,y-L.y)-(L.r-L.thick/2))<=L.thick/2+2;
  case'line':return segDist(x,y,L.x1,L.y1,L.x2,L.y2)<=2;
- case'needle':{const b=bbox(L);const f=norm(getV(L.var),L.min,L.max),a=rad(L.a0+f*(L.a1-L.a0));return segDist(x,y,L.x-Math.sin(a)*L.tail,L.y+Math.cos(a)*L.tail,L.x+Math.sin(a)*L.len,L.y-Math.cos(a)*L.len)<=3||Math.hypot(x-L.x,y-L.y)<=Math.max(3,L.hub+1)}
+ case'needle':{const b=bbox(L);const f=norm(getE(L.expr),L.min,L.max),a=rad(L.a0+f*(L.a1-L.a0));return segDist(x,y,L.x-Math.sin(a)*L.tail,L.y+Math.cos(a)*L.tail,L.x+Math.sin(a)*L.len,L.y-Math.cos(a)*L.len)<=3||Math.hypot(x-L.x,y-L.y)<=Math.max(3,L.hub+1)}
  default:{const b=bbox(L);return b&&x>=b[0]-1&&x<=b[2]+1&&y>=b[1]-1&&y<=b[3]+1}}}
 function pick(x,y){for(let i=S.layers.length-1;i>=0;i--){const L=S.layers[i];if(L.visible&&!L.locked&&hit(L,x,y))return L}return null}
 function moveBy(L,dx,dy){switch(L.type){
@@ -411,9 +474,10 @@ function buildVars(){const box=$('#vars');if(!box)return;box.innerHTML='';
  box.append(h('div',{class:'vrow vhead'},h('span',{},'名前'),h('span',{},'種類'),h('span',{},'CH'),h('span',{},'最小'),h('span',{},'最大'),h('span',{},'プレビュー値'),h('span',{},''),h('span',{},'自動'),h('span',{},'')));
  for(const k in varCtl)delete varCtl[k];
  S.vars.forEach(v=>{const bool=v.type==='bool';
-  const nm=h('input',{type:'text',value:v.name,'aria-label':'変数名',oninput:e=>{v.name=e.target.value;gen()},onchange:()=>{commit();buildInspector()}});
+  const nm=h('input',{type:'text',value:v.name,'aria-label':'変数名',title:'半角英数字と_のみ。式の中でこの名前を使います',spellcheck:'false'});
+  nm.addEventListener('change',()=>{const old=exprName(v);let n=nm.value.replace(/[^A-Za-z0-9_]/g,'_');if(!n||/^[0-9]/.test(n))n='v'+n;let u=n,k=2;while(S.vars.some(x=>x!==v&&exprName(x)===u))u=n+(k++);v.name=u;nm.value=u;if(u!==old)renameRefs(old,u);commit();buildInspector();requestRender();gen()});
   const typ=h('select',{'aria-label':'種類'},h('option',{value:'num',selected:!bool},'数値'),h('option',{value:'bool',selected:bool},'Bool'));
-  typ.onchange=()=>{v.type=typ.value;SW.delete(v.id);if(v.type==='bool'){V[v.id]=0;v.init=0;for(const L of S.layers)if(L.var===v.id)L.var=null}else{v.init=(v.min+v.max)/2;V[v.id]=v.init}commit();buildVars();buildInspector();requestRender();gen()};
+  typ.onchange=()=>{v.type=typ.value;SW.delete(v.id);if(v.type==='bool'){V[v.id]=0;v.init=0}else{v.init=(v.min+v.max)/2;V[v.id]=v.init}commit();buildVars();buildInspector();requestRender();gen()};
   const ch=h('input',{type:'number',value:v.ch,min:1,max:32,title:bool?'input.getBool のチャンネル':'input.getNumber のチャンネル',oninput:e=>{v.ch=parseInt(e.target.value)||1;gen()},onchange:commit});
   const del=h('button',{class:'btn sm danger',title:'この変数を削除',onclick:()=>delVar(v.id)},'✕');
   const sw=h('input',{type:'checkbox',checked:SW.has(v.id),'aria-label':'自動で動かす',onchange:()=>{sw.checked?SW.add(v.id):SW.delete(v.id)}});
@@ -432,7 +496,7 @@ function buildVars(){const box=$('#vars');if(!box)return;box.innerHTML='';
   box.append(h('div',{class:'vrow'},nm,typ,ch,mn,mx,slider,val,sw,del))});
 }
 function updAllText(){}
-function delVar(id){S.vars=S.vars.filter(v=>v.id!==id);delete V[id];SW.delete(id);for(const L of S.layers){if(L.var===id)L.var=null;if(L.cond&&L.cond.v===id)L.cond.v=null}commit();buildVars();buildInspector();requestRender();gen()}
+function delVar(id){S.vars=S.vars.filter(v=>v.id!==id);delete V[id];SW.delete(id);commit();buildVars();buildInspector();requestRender();gen()}
 function addVar(type){const bool=type==='bool';const nb=S.vars.filter(v=>(v.type==='bool')===bool).length+1;const v={id:'V'+(S.nid++),name:(bool?'flag':'var')+nb,ch:nb,min:0,max:bool?1:100,init:bool?0:50,type:bool?'bool':'num'};S.vars.push(v);V[v.id]=v.init;commit();buildVars();buildInspector();gen()}
 $('#addvar').onclick=()=>addVar('num');$('#addbool').onclick=()=>addVar('bool');
 let sweepAll=false;$('#sweepall').onclick=()=>{sweepAll=!sweepAll;SW.clear();if(sweepAll)S.vars.forEach(v=>SW.add(v.id));$('#sweepall').classList.toggle('on',sweepAll);buildVars()};
@@ -463,7 +527,7 @@ function barRectS(L,a,b){const N=barN(L),X=L.x,Y=L.y,W=L.w,H=L.h;let r;
  switch(L.dir){case'r':r=[sym(X,'+',a),Y,sym(b,'-',a),H];break;case'l':r=[sym(sym(X,'+',N),'-',b),Y,sym(b,'-',a),H];break;case'u':r=[X,sym(sym(Y,'+',N),'-',b),W,sym(b,'-',a)];break;default:r=[X,sym(Y,'+',a),W,sym(b,'-',a)]}return r.join(',')}
 function dotGroups(L){const groups=new Map();for(const k in L.pts){const v=+k;const c=L.pts[k];if(!groups.has(c))groups.set(c,[]);groups.get(c).push([v&1023,v>>10])}
  return [...groups].map(([c,pts])=>{const rs=mergeRects(pts);const nums=[];rs.forEach(r=>nums.push(r.x,r.y,r.w,r.h));return{c,rs,nums}})}
-function genLayer(L,nm,ctx){const o=[],p=s=>o.push(s),A=L.alpha,vx=id=>id!=null&&nm[id]?nm[id]:'0';
+function genLayer(L,nm,ctx){const o=[],p=s=>o.push(s),A=L.alpha,lx=src=>compileExpr(src).lua(nm);
  switch(L.type){
  case'dots':{for(const g of dotGroups(L)){p(lcol(g.c,A));if(g.rs.length<=2)g.rs.forEach(r=>p(`screen.drawRectF(${r.x},${r.y},${r.w},${r.h})`));
    else if(ctx&&ctx.dotStr){p(`do local t=D("${encNums(g.nums)}")`);p('for i=1,#t,4 do screen.drawRectF(t[i],t[i+1],t[i+2],t[i+3]) end end')}
@@ -476,32 +540,49 @@ function genLayer(L,nm,ctx){const o=[],p=s=>o.push(s),A=L.alpha,vx=id=>id!=null&
    else{p(lcol(T.colMaj,A));p(`local l=${nf(T.lenMaj)}`)}
    p(`screen.drawLine(${L.x}+s*${par(RO)},${L.y}-c*${par(RO)},${L.x}+s*(${RO}-l),${L.y}-c*(${RO}-l))`);p('end');
    if(T.lbl){const lastL=full?T.n-1:T.n;p(lcol(T.lblColor,A));p(`for i=0,${lastL},${Math.max(1,T.lblEvery|0)} do`);p(`local a=math.rad(${nf(T.a0)}+${nf(T.a1-T.a0)}*i/${T.n})`);
-    p(`local t=string.format("%.${T.lblDec}f",${nf(T.lblMin)}+${nf(T.lblMax-T.lblMin)}*i/${T.n})`);
+    {const vE=`${nf(T.lblMin)}+${nf(T.lblMax-T.lblMin)}*i/${T.n}`,K=Math.pow(10,T.lblDec);p(`local t=string.format("%.${T.lblDec}f",${T.lblDec?`math.floor((${vE})*${K}+.5)/${K}`:`math.floor(${vE}+.5)`})`)}
     p(`screen.drawText(math.floor(${L.x}+math.sin(a)*${par(T.lblR)}-#t*2.5+.5),math.floor(${L.y}-math.cos(a)*${par(T.lblR)}-2.5+.5),t)`);p('end')}}break}
- case'arc':{const dir=(L.a1>=L.a0)?1:-1,st=nf(dir*arcStep(L.r));const e=L.var!=null?`${nf(L.a0)}+norm(${vx(L.var)},${nf(L.min)},${nf(L.max)})*${nf(L.a1-L.a0)}`:nf(L.a1);
-  p(lcol(L.color,A));p(`for k=0,${Math.max(1,L.thick)-1} do`);p(`local q=${L.r}-k`);p(`for a=${nf(L.a0)},${e}${dir>0?'+':'-'}0.001,${st} do`);p('local d=math.rad(a)');
-  p(`screen.drawRectF(math.floor(${L.x}+q*math.sin(d)+.5),math.floor(${L.y}-q*math.cos(d)+.5),1,1)`);p('end');p('end');break}
+ case'arc':{const he=hasE(L),sw=L.a1-L.a0,ST=arcStep(L.r),g=arcRings(L),zr=he&&L.zero,S0=nf(zr?L.a0+norm(0,L.min,L.max)*sw:L.a0),dir=sw>=0?1:-1,X=L.x,Y=L.y;
+  p(lcol(L.color,A));
+  if(he){p('do');p(`local m=${nf(L.a0)}+norm(${lx(L.expr)},${nf(L.min)},${nf(L.max)})*${nf(sw)}`);if(zr)p(`local n=m<${par(S0)} and -1 or 1`);p(`if math.abs(m-${par(S0)})>.01 then`);
+   p(zr?`for a=${S0},m+n*.001,n*${nf(ST)} do`:`for a=${S0},m${dir>0?'+':'-'}.001,${nf(dir*ST)} do`)}
+  else p(`for a=${S0},${nf(L.a1)}${dir>0?'+':'-'}.001,${nf(dir*ST)} do`);
+  p('local d=math.rad(a)');p('local s,c=math.sin(d),math.cos(d)');
+  if(g.nr>0){p(`for k=0,${g.nr} do`);p(`local q=${par(L.r)}-k*${nf(g.dq)}`);p(`screen.drawRectF(math.floor(${X}+q*s+.5),math.floor(${Y}-q*c+.5),1,1)`);p('end')}
+  else p(`screen.drawRectF(math.floor(${X}+s*${par(L.r)}+.5),math.floor(${Y}-c*${par(L.r)}+.5),1,1)`);
+  p('end');if(he){p('end');p('end')}break}
  case'rect':p(lcol(L.color,A));p(`screen.${L.fill?'drawRectF':'drawRect'}(${L.x},${L.y},${L.w},${L.h})`);break;
  case'line':p(lcol(L.color,A));p(`screen.drawLine(${L.x1},${L.y1},${L.x2},${L.y2})`);break;
- case'needle':{p('do');p(`local a=math.rad(${nf(L.a0)}+norm(${vx(L.var)},${nf(L.min)},${nf(L.max)})*${nf(L.a1-L.a0)})`);p('local s,c=math.sin(a),math.cos(a)');p(lcol(L.color,A));
+ case'needle':{p('do');p(`local a=math.rad(${nf(L.a0)}+norm(${lx(L.expr)},${nf(L.min)},${nf(L.max)})*${nf(L.a1-L.a0)})`);p('local s,c=math.sin(a),math.cos(a)');p(lcol(L.color,A));
   p(`local tx,ty=${L.x}+s*${par(L.len)},${L.y}-c*${par(L.len)}`);
   if(L.style==='tri'){p(`local bx,by=${L.x}-s*${par(L.tail)},${L.y}+c*${par(L.tail)}`);p(`local hw=${nf(L.width/2)}`);p('screen.drawTriangleF(tx,ty,bx+c*hw,by+s*hw,bx-c*hw,by-s*hw)')}
   else p(`screen.drawLine(${L.tail?`${L.x}-s*${par(L.tail)},${L.y}+c*${par(L.tail)}`:`${L.x},${L.y}`},tx,ty)`);
   if(L.hub>0)p(`screen.drawCircleF(${L.x},${L.y},${L.hub})`);p('end');break}
- case'bar':{const N=barN(L);p('do');p(`local f=norm(${vx(L.var)},${nf(L.min)},${nf(L.max)})`);
-  if(L.style==='seg'){const g=segGeom(L),WI=Math.ceil(g.n*L.warn.at/100-1e-9);p(`local k=math.floor(f*${g.n}+.5)`);p(`for i=0,${g.n-1} do`);
-   p(`local a,b=math.floor(i*${nf(g.step)}+.5),math.floor(i*${nf(g.step)}+${nf(g.len)}+.5)`);p('if i<k then');
-   if(L.warn.on){p(`if i>=${WI} then`);p(lcol(L.warn.color,A));p('else');p(lcol(L.color,A));p('end')}else p(lcol(L.color,A));
+ case'bar':{const N=barN(L),zero=!!L.zero&&L.style!=='mark',z0=norm(0,L.min,L.max),negOn=zero&&L.neg&&L.neg.on;p('do');p(`local f=norm(${lx(L.expr)},${nf(L.min)},${nf(L.max)})`);
+  const mainCol=()=>{if(negOn){p(`if f<${nf(z0)} then`);p(lcol(L.neg.color,A));p('else');p(lcol(L.color,A));p('end')}else p(lcol(L.color,A))};
+  if(L.style==='seg'){const g=segGeom(L),WI=Math.ceil(g.n*L.warn.at/100-1e-9);
+   if(zero)p(`local lo,hi=math.min(f,${nf(z0)}),math.max(f,${nf(z0)})`);else p(`local k=math.floor(f*${g.n}+.5)`);
+   p(`for i=0,${g.n-1} do`);p(`local a,b=math.floor(i*${nf(g.step)}+.5),math.floor(i*${nf(g.step)}+${nf(g.len)}+.5)`);
+   if(zero){p(`local m=(i+.5)/${g.n}`);p('if m>lo and m<=hi then')}else p('if i<k then');
+   if(zero)mainCol();else if(L.warn.on){p(`if i>=${WI} then`);p(lcol(L.warn.color,A));p('else');p(lcol(L.color,A));p('end')}else p(lcol(L.color,A));
    p(`screen.drawRectF(${barRectS(L,'a','b')})`);if(L.bg.on){p('else');p(lcol(L.bg.color,A));p(`screen.drawRectF(${barRectS(L,'a','b')})`)}p('end');p('end')}
   else{if(L.bg.on){p(lcol(L.bg.color,A));p(`screen.drawRectF(${L.x},${L.y},${L.w},${L.h})`)}
    if(L.style==='mark'){const t=Math.max(1,L.mark);p(`local n=math.floor(f*${N-t}+.5)`);p(lcol(L.color,A));p(`screen.drawRectF(${barRectS(L,'n',`n+${t}`)})`)}
+   else if(zero){const zp=Math.floor(z0*N+.5);p(`local n=math.floor(f*${N}+.5)`);p(`local a,b=math.min(n,${zp}),math.max(n,${zp})`);p('if b>a then');mainCol();p(`screen.drawRectF(${barRectS(L,'a','b')})`);p('end')}
    else{const wz=Math.round(L.warn.at/100*N);p(`local n=math.floor(f*${N}+.5)`);
     if(L.warn.on){p(`local m=math.min(n,${wz})`);p('if m>0 then');p(lcol(L.color,A));p(`screen.drawRectF(${barRectS(L,0,'m')})`);p('end');p(`if n>${wz} then`);p(lcol(L.warn.color,A));p(`screen.drawRectF(${barRectS(L,wz,'n')})`);p('end')}
     else{p('if n>0 then');p(lcol(L.color,A));p(`screen.drawRectF(${barRectS(L,0,'n')})`);p('end')}}}
   p('end');break}
- case'text':{if(L.var==null){const s=L.pre;const x=L.align==='c'?Math.floor(L.x-s.length*2.5+.5):L.align==='r'?L.x-s.length*5:L.x;p(lcol(L.color,A));p(`screen.drawText(${x},${L.y},${lstr(s)})`)}
-  else{const parts=[];if(L.pre)parts.push(lstr(L.pre));parts.push(luaFmt(vx(L.var),L.mode,L.dec,L.pad));if(L.suf)parts.push(lstr(L.suf));
-   p('do');p(`local s=${parts.join('..')}`);p(lcol(L.color,A));
+ case'text':{if(!hasE(L)){const s=L.pre;const x=L.align==='c'?Math.floor(L.x-s.length*2.5+.5):L.align==='r'?L.x-s.length*5:L.x;p(lcol(L.color,A));p(`screen.drawText(${x},${L.y},${lstr(s)})`)}
+  else{const K=Math.pow(10,L.dec),e=lx(L.expr),simple=/^[\w.]+$/.test(e);p('do');p(`local t=${L.dec?`${simple?e:`(${e})`}*${K}`:e}`);
+   const fin_=x=>L.dec?`(${x})/${K}`:x;
+   if(L.mode==='floor')p(`t=${fin_('t<0 and -math.floor(-t+1e-9) or math.floor(t+1e-9)')}`);
+   else if(L.mode==='ceil')p(`t=${fin_('t<0 and -math.ceil(-t-1e-9) or math.ceil(t-1e-9)')}`);
+   else p(`t=${fin_('t<0 and -math.floor(.5-t) or math.floor(t+.5)')}`);
+   const W=L.pad>0?L.pad+(L.dec>0?L.dec+1:0):0;
+   const fm=L.pad>0?`(t<0 and"-"or"")..string.format("%0${W}.${L.dec}f",math.abs(t))`:`string.format("%.${L.dec}f",t)`;
+   const parts=[];if(L.pre)parts.push(lstr(L.pre));parts.push(fm);if(L.suf)parts.push(lstr(L.suf));
+   p(`local s=${parts.join('..')}`);p(lcol(L.color,A));
    const xe=L.align==='c'?`math.floor(${L.x}-#s*2.5+.5)`:L.align==='r'?`${L.x}-#s*5`:`${L.x}`;p(`screen.drawText(${xe},${L.y},s)`);p('end')}break}
  }
  return o}
@@ -544,7 +625,7 @@ function optimizeTokens(lines,op){
  return out}
 function autoIndentSafe(lines){return autoIndent(lines)}
 function genLua(o=LO){
- const used=new Set();for(const L of S.layers){if(!L.visible)continue;if(L.var!=null)used.add(L.var);if(L.cond.on&&L.cond.v!=null)used.add(L.cond.v)}
+ const used=new Set();for(const L of S.layers){if(!L.visible)continue;compileExpr(L.expr).ids.forEach(x=>used.add(x));if(L.cond.on)compileExpr(L.cond.expr).ids.forEach(x=>used.add(x))}
  const vars=o.opt?S.vars.filter(v=>used.has(v.id)):S.vars;
  const nm=varNames(o.opt,o.opt?used:null);
  const ctx={dotStr:false};
@@ -552,7 +633,9 @@ function genLua(o=LO){
  const body=[];
  if(o.bg){body.push(lcol(S.screen.bg,255));body.push('screen.drawClear()')}
  for(const L of S.layers){if(!L.visible)continue;let g=genLayer(L,nm,ctx);if(!g.length)continue;
-  if(L.cond.on&&L.cond.v!=null){const cv=S.vars.find(x=>x.id===L.cond.v);const ex=cv&&cv.type==='bool'?(L.cond.val>=.5?nm[cv.id]:'not '+nm[cv.id]):`${nm[L.cond.v]} ${L.cond.op} ${nf(L.cond.val)}`;g=[`if ${ex} then`,...g,'end']}
+  if(L.cond.on&&hasE(L.cond)){const cc=compileExpr(L.cond.expr);let ex=null;
+   if(cc.sole){const cv=S.vars.find(x=>x.id===cc.sole);if(cv&&cv.type==='bool')ex=L.cond.val>=.5?nm[cv.id]:'not '+nm[cv.id]}
+   if(ex===null)ex=`${cc.lua(nm)} ${L.cond.op} ${nf(L.cond.val)}`;g=[`if ${ex} then`,...g,'end']}
   body.push('-- '+L.type+': '+(ascii(L.name)||L.id));body.push(...g)}
  const txt=body.join('\n');const out=[];
  out.push('-- Meter Dot Studio output');out.push(`-- screen ${S.screen.w}x${S.screen.h} px (${S.screen.w/32}x${S.screen.h/32} modules)`);
@@ -656,7 +739,13 @@ const ftx=(o,k)=>{const i=h('input',{type:'text',value:o[k]??'','aria-label':k})
 const fck=(o,k,rebuild,label)=>{const i=h('input',{type:'checkbox',checked:!!o[k],id:'ck'+Math.random().toString(36).slice(2,7)});i.addEventListener('change',()=>{o[k]=i.checked;changed();commit();if(rebuild)buildInspector()});return h('label',{class:'ctl'},i,label||'')};
 const fsel=(o,k,opts,rebuild)=>{const s=h('select',{'aria-label':k},opts.map(([v,t])=>h('option',{value:v,selected:String(o[k])===String(v)},t)));s.addEventListener('change',()=>{o[k]=isNaN(+s.value)||s.value===''?s.value:(typeof o[k]==='number'?+s.value:s.value);changed();commit();if(rebuild)buildInspector()});return s};
 const fcol=(o,k)=>{const i=h('input',{type:'color',value:o[k],'aria-label':k});i.addEventListener('input',()=>{o[k]=i.value;changed()});i.addEventListener('change',()=>{commit();buildLayers()});return h('span',{class:'ctl'},i,h('button',{class:'btn sm',title:'描画色を使う',onclick:()=>{o[k]=curColor;i.value=curColor;changed();commit();buildLayers()}},'描画色'))};
-const fvar=(o,k,allowNone=true,kind='num',cb)=>{const list=kind==='all'?S.vars:S.vars.filter(v=>v.type!=='bool');const s=h('select',{'aria-label':'変数'},allowNone?h('option',{value:''},'(なし)'):null,list.map(v=>h('option',{value:v.id,selected:o[k]===v.id},`${v.type==='bool'?'[Bool] ':''}${v.name} (ch${v.ch})`)));s.addEventListener('change',()=>{o[k]=s.value||null;if(cb)cb();changed();commit();buildInspector()});return s};
+const fexpr=(o,k)=>{const wrap=h('div',{style:'display:grid;gap:4px;width:100%;min-width:0'});
+ const inp=h('input',{type:'text',value:o[k]||'',placeholder:'例: speed*3  /  |value|  /  max(rpm,0)','aria-label':'値の式',spellcheck:'false',style:'font-family:var(--mono)'});
+ const msg=h('div',{class:'hint'});
+ const upd=()=>{const c=compileExpr(inp.value);const t=inp.value.trim();msg.textContent=c.err?'⚠ '+c.err:(t?`現在の値 = ${+getE(inp.value).toFixed(4)}`:'空欄 = 変数なし(固定)');msg.style.color=c.err?'var(--danger)':'';inp.style.borderColor=c.err?'var(--danger)':''};
+ const chips=h('div',{class:'ctl'},S.vars.map(v=>h('button',{class:'btn sm',title:(v.type==='bool'?'Bool変数 (ON=1 / OFF=0)':'数値変数')+' を式に入れる',onclick:()=>{inp.focus();const a=inp.selectionStart??inp.value.length;inp.setRangeText(exprName(v),a,inp.selectionEnd??a,'end');inp.dispatchEvent(new Event('input'));}},exprName(v)+(v.type==='bool'?' (B)':''))));
+ inp.addEventListener('input',()=>{o[k]=inp.value;upd();changed()});inp.addEventListener('change',()=>{commit();buildInspector()});upd();
+ wrap.append(inp,msg,chips,h('div',{class:'hint'},'使える式: + - * / % ^ ( )、|x|(絶対値)、abs min max sqrt floor ceil round sign clamp(x,最小,最大) sin cos tan atan deg rad pi'));return wrap};
 const row=(label,...c)=>h('div',{class:'row'},h('label',{},label),h('div',{class:'ctl'},...c));
 const sec=(title,open,...rows)=>{const d=h('details',{},h('summary',{},title),h('div',{class:'sec'},...rows));if(open)d.open=true;return d};
 const openState={};
@@ -680,22 +769,22 @@ function buildInspector(keepFocus){const box=$('#inspector');if(keepFocus&&box.c
   if(t.on)items.push(sec('目盛りの数値ラベル',true,row('ラベル',fck(t,'lbl',true,'表示する')),...(t.lbl?[row('数値範囲',h('span',{},'最小'),fin(t,'lblMin',{step:'any'}),h('span',{},'最大'),fin(t,'lblMax',{step:'any'})),row('間引き',fin(t,'lblEvery',{min:1}),h('span',{class:'hint'},'N個おきに表示')),row('小数桁',fin(t,'lblDec',{min:0,max:4})),
     row('半径',fin(t,'lblR'),h('button',{class:'btn sm',onclick:()=>{t.lblR=Math.round(L.r-t.inset-t.lenMaj-5);commit();buildInspector();changed()}},'自動')),row('色',fcol(t,'lblColor'))]:[])))}
  if(T==='arc'){items.push(sec('円弧',true,xy(L,'x','y'),row('半径',fin(L,'r',{min:1})),row('太さ',fin(L,'thick',{min:1})),row('角度',h('span',{},'開始'),fin(L,'a0'),h('span',{},'終了'),fin(L,'a1')),
-   row('変数連動',fvar(L,'var')),...(L.var!=null?[row('範囲',h('span',{},'最小'),fin(L,'min',{step:'any'}),h('span',{},'最大'),fin(L,'max',{step:'any'})),h('div',{class:'hint'},'開始角から、値に応じた角度まで弧が伸びます')]:[h('div',{class:'hint'},'変数なしなら固定の弧(レッドゾーンなどに)')])))}
+   row('値(式)',fexpr(L,'expr')),...(hasE(L)?[row('基準',fck(L,'zero',false,'0を基準に伸ばす(マイナス対応)')),row('範囲',h('span',{},'最小'),fin(L,'min',{step:'any'}),h('span',{},'最大'),fin(L,'max',{step:'any'})),h('div',{class:'hint'},'開始角から、値に応じた角度まで弧が伸びます')]:[h('div',{class:'hint'},'変数なしなら固定の弧(レッドゾーンなどに)')])))}
  if(T==='rect')items.push(sec('四角',true,xy(L,'x','y'),row('サイズ',h('span',{},'幅'),fin(L,'w'),h('span',{},'高'),fin(L,'h')),row('描画',fck(L,'fill',false,'塗りつぶし'))));
  if(T==='line')items.push(sec('線',true,row('始点',h('span',{},'X'),fin(L,'x1'),h('span',{},'Y'),fin(L,'y1')),row('終点',h('span',{},'X'),fin(L,'x2'),h('span',{},'Y'),fin(L,'y2'))));
  if(T==='needle'){items.push(sec('針',true,xy(L,'x','y'),row('長さ',fin(L,'len'),h('span',{},'尻尾'),fin(L,'tail',{min:0})),row('形',fsel(L,'style',[['line','線'],['tri','三角(テーパー)']],true),...(L.style==='tri'?[h('span',{},'幅'),fin(L,'width',{min:1})]:[])),row('中心円',fin(L,'hub',{min:0}),h('span',{class:'hint'},'0で無し')),
-   row('変数',fvar(L,'var',false)),row('値の範囲',h('span',{},'最小'),fin(L,'min',{step:'any'}),h('span',{},'最大'),fin(L,'max',{step:'any'})),
+   row('値(式)',fexpr(L,'expr')),row('値の範囲',h('span',{},'最小'),fin(L,'min',{step:'any'}),h('span',{},'最大'),fin(L,'max',{step:'any'})),
    row('角度',h('span',{},'最小時'),fin(L,'a0'),h('span',{},'最大時'),fin(L,'a1')),h('div',{class:'hint'},'0°=真上、時計回りが+。例: -135〜135 で270°スイープ')))}
  if(T==='bar'){const seg=L.style==='seg';items.push(sec('バー',true,xy(L,'x','y'),row('サイズ',h('span',{},'幅'),fin(L,'w',{min:1}),h('span',{},'高'),fin(L,'h',{min:1})),
    row('伸びる向き',fsel(L,'dir',[['r','右へ'],['l','左へ'],['u','上へ'],['d','下へ']])),row('見た目',fsel(L,'style',[['solid','連続バー'],['seg','セグメント(デジパネ風)'],['mark','マーカー(動く目印)']],true)),
    ...(seg?[row('セグメント',h('span',{},'数'),fin(L,'segs',{min:1}),h('span',{},'隙間'),fin(L,'gap',{min:0}))]:[]),...(L.style==='mark'?[row('マーカー幅',fin(L,'mark',{min:1}))]:[]),
-   row('変数',fvar(L,'var',false)),row('値の範囲',h('span',{},'最小'),fin(L,'min',{step:'any'}),h('span',{},'最大'),fin(L,'max',{step:'any'}))));
-  items.push(sec('背景・警告色',true,row('背景',fck(L.bg,'on',true,'表示'),...(L.bg.on?[fcol(L.bg,'color')]:[])),...(L.style!=='mark'?[row('警告色',fck(L.warn,'on',true,'レッドゾーン'),...(L.warn.on?[fcol(L.warn,'color')]:[])),...(L.warn.on?[row('開始位置',fin(L.warn,'at',{min:0,max:100}),h('span',{class:'hint'},'範囲の何%から')) ]:[])]:[])))}
- if(T==='text')items.push(sec('文字',true,xy(L,'x','y'),row('変数の値',fvar(L,'var')),row('前の文字',ftx(L,'pre')),
-   ...(L.var!=null?[row('後の文字',ftx(L,'suf')),row('端数処理',fsel(L,'mode',[['round','四捨五入'],['floor','切り捨て'],['ceil','切り上げ']])),row('小数桁数',fin(L,'dec',{min:0,max:6})),row('整数部の桁',fin(L,'pad',{min:0,max:8}),h('span',{class:'hint'},'足りない分は0埋め'))]:[]),
+   row('値(式)',fexpr(L,'expr')),row('値の範囲',h('span',{},'最小'),fin(L,'min',{step:'any'}),h('span',{},'最大'),fin(L,'max',{step:'any'})),...(L.style!=='mark'?[row('基準',fck(L,'zero',true,'0を基準に伸ばす(マイナス対応)'))]:[])));
+  items.push(sec('背景・警告色',true,row('背景',fck(L.bg,'on',true,'表示'),...(L.bg.on?[fcol(L.bg,'color')]:[])),...(L.style!=='mark'&&L.zero?[row('マイナス色',fck(L.neg,'on',true,'別の色にする'),...(L.neg.on?[fcol(L.neg,'color')]:[]))]:[]),...(L.style!=='mark'&&!L.zero?[row('警告色',fck(L.warn,'on',true,'レッドゾーン'),...(L.warn.on?[fcol(L.warn,'color')]:[])),...(L.warn.on?[row('開始位置',fin(L.warn,'at',{min:0,max:100}),h('span',{class:'hint'},'範囲の何%から')) ]:[])]:[])))}
+ if(T==='text')items.push(sec('文字',true,xy(L,'x','y'),row('値(式)',fexpr(L,'expr')),row('前の文字',ftx(L,'pre')),
+   ...(hasE(L)?[row('後の文字',ftx(L,'suf')),row('端数処理',fsel(L,'mode',[['round','四捨五入'],['floor','切り捨て(0に近づける)'],['ceil','切り上げ(0から離す)']])),row('小数桁数',fin(L,'dec',{min:0,max:6})),row('整数部の桁',fin(L,'pad',{min:0,max:8}),h('span',{class:'hint'},'足りない分は0埋め(例 -005)'))]:[]),
    row('揃え',fsel(L,'align',[['l','左'],['c','中央'],['r','右']])),h('div',{class:'hint'},'表示できるのは半角英数と記号のみ(Stormworksの標準フォント)。1文字=幅5px。')));
- const cvv=L.cond.v!=null?S.vars.find(x=>x.id===L.cond.v):null;const cB=cvv&&cvv.type==='bool';
- items.push(sec('表示条件(警告灯など)',false,row('条件',fck(L.cond,'on',true,'条件付きで表示')),...(L.cond.on?[row('変数',fvar(L.cond,'v',true,'all',()=>{const x=S.vars.find(y=>y.id===L.cond.v);if(x&&x.type==='bool'){L.cond.op='==';if(L.cond.val!==0&&L.cond.val!==1)L.cond.val=1}})),
+ const cc=compileExpr(L.cond.expr),cvv=cc.sole?S.vars.find(x=>x.id===cc.sole):null,cB=!!(cvv&&cvv.type==='bool');
+ items.push(sec('表示条件(警告灯など)',false,row('条件',fck(L.cond,'on',true,'条件付きで表示')),...(L.cond.on?[row('値(式)',fexpr(L.cond,'expr')),
    ...(cB?[row('状態',fsel(L.cond,'val',[[1,'ONのとき表示'],[0,'OFFのとき表示']]))]:[row('比較',fsel(L.cond,'op',[['<','より小さい'],['<=','以下'],['>','より大きい'],['>=','以上'],['==','等しい'],['~=','等しくない']]),fin(L.cond,'val',{step:'any'}))])]:[])));
  items.forEach(d=>{const s=d.querySelector('summary').textContent;if(s in openState)d.open=openState[s];box.append(d)})}
 
@@ -707,51 +796,52 @@ function loadTemplate(name){S=blankState();V={};SW.clear();sweepAll=false;$('#sw
  if(name==='car'){S.screen={w:160,h:96,bg:'#05070b'};const sp=tv('speed',1,0,240,96),rp=tv('rpm',2,0,8000,3200),fu=tv('fuel',3,0,100,62),hb=tv('highbeam',1,0,1,0,'bool');
   add('rect',{name:'外枠',x:0,y:0,w:159,h:95,fill:false,color:'#334155',noVar:1});
   add('circle',{name:'スピードメーター',x:48,y:50,r:44,color:'#64748b',ticks:{on:true,a0:-135,a1:135,n:12,minor:1,lenMaj:6,lenMin:3,inset:2,colMaj:'#e2e8f0',colMin:'#64748b',lbl:true,lblMin:0,lblMax:240,lblEvery:2,lblDec:0,lblR:28,lblColor:'#e2e8f0'}});
-  add('arc',{name:'レッドゾーン',x:48,y:50,r:42,thick:2,a0:90,a1:135,color:'#ef4444',var:null,noVar:1});
-  add('needle',{name:'速度針',x:48,y:50,len:36,tail:6,style:'tri',width:3,hub:3,a0:-135,a1:135,var:sp,min:0,max:240,color:'#f43f5e'});
-  add('text',{name:'速度(数値)',x:48,y:72,var:sp,dec:0,pad:3,align:'c',color:'#f8fafc'});
-  add('text',{name:'単位',x:48,y:80,pre:'KM/H',var:null,noVar:1,align:'c',color:'#64748b'});
-  add('text',{name:'RPM',x:100,y:8,pre:'RPM ',var:rp,dec:0,pad:4,color:'#e2e8f0'});
-  add('bar',{name:'RPMバー',x:100,y:18,w:56,h:10,dir:'r',style:'seg',segs:16,gap:1,var:rp,min:0,max:8000,color:'#22d3ee',bg:{on:true,color:'#16202c'},warn:{on:true,at:80,color:'#ef4444'}});
-  add('text',{name:'FUEL見出し',x:100,y:40,pre:'FUEL',var:null,noVar:1,color:'#94a3b8'});
-  add('text',{name:'FUEL値',x:156,y:40,var:fu,suf:'%',align:'r',color:'#facc15'});
-  add('bar',{name:'燃料バー',x:100,y:50,w:56,h:6,dir:'r',var:fu,min:0,max:100,color:'#facc15',bg:{on:true,color:'#2a2410'}});
+  add('arc',{name:'レッドゾーン',x:48,y:50,r:42,thick:2,a0:90,a1:135,color:'#ef4444',noVar:1});
+  add('needle',{name:'速度針',x:48,y:50,len:36,tail:6,style:'tri',width:3,hub:3,a0:-135,a1:135,expr:'speed',min:0,max:240,color:'#f43f5e'});
+  add('text',{name:'速度(数値)',x:48,y:72,expr:'speed',dec:0,pad:3,align:'c',color:'#f8fafc'});
+  add('text',{name:'単位',x:48,y:80,pre:'KM/H',noVar:1,align:'c',color:'#64748b'});
+  add('text',{name:'RPM',x:100,y:8,pre:'RPM ',expr:'rpm/1000',dec:1,suf:'K',color:'#e2e8f0'});
+  add('bar',{name:'RPMバー',x:100,y:18,w:56,h:10,dir:'r',style:'seg',segs:16,gap:1,expr:'rpm',min:0,max:8000,color:'#22d3ee',bg:{on:true,color:'#16202c'},warn:{on:true,at:80,color:'#ef4444'}});
+  add('text',{name:'FUEL見出し',x:100,y:40,pre:'FUEL',noVar:1,color:'#94a3b8'});
+  add('text',{name:'FUEL値',x:156,y:40,expr:'fuel',suf:'%',align:'r',color:'#facc15'});
+  add('bar',{name:'燃料バー',x:100,y:50,w:56,h:6,dir:'r',expr:'fuel',min:0,max:100,color:'#facc15',bg:{on:true,color:'#2a2410'}});
   add('dots',{name:'燃料アイコン',pts:dotsFrom(['..#..','..#..','.###.','.###.','#####','#####','.###.'],101,70,'#facc15')});
-  add('text',{name:'燃料警告',x:112,y:72,pre:'LOW FUEL',var:null,noVar:1,color:'#ef4444',cond:{on:true,v:fu,op:'<',val:15}});
-  add('rect',{name:'ハイビーム灯',x:138,y:82,w:16,h:9,color:'#2563eb',noVar:1,cond:{on:true,v:hb,op:'==',val:1}});
-  add('text',{name:'HI',x:142,y:84,pre:'HI',var:null,noVar:1,color:'#ffffff',cond:{on:true,v:hb,op:'==',val:1}});
-  add('text',{name:'LO',x:142,y:84,pre:'LO',var:null,noVar:1,color:'#475569',cond:{on:true,v:hb,op:'==',val:0}});}
+  add('text',{name:'燃料警告',x:112,y:72,pre:'LOW FUEL',noVar:1,color:'#ef4444',cond:{on:true,expr:'fuel',op:'<',val:15}});
+  add('rect',{name:'ハイビーム灯',x:138,y:82,w:16,h:9,color:'#2563eb',noVar:1,cond:{on:true,expr:'highbeam',op:'==',val:1}});
+  add('text',{name:'HI',x:142,y:84,pre:'HI',noVar:1,color:'#ffffff',cond:{on:true,expr:'highbeam',op:'==',val:1}});
+  add('text',{name:'LO',x:142,y:84,pre:'LO',noVar:1,color:'#475569',cond:{on:true,expr:'highbeam',op:'==',val:0}});}
  else if(name==='train'){S.screen={w:160,h:96,bg:'#060a10'};const sp=tv('speed',1,0,130,78),lim=tv('limit',2,0,130,95),nt=tv('notch',3,-8,5,3),bp=tv('bp',4,0,500,310),dr=tv('door',1,0,1,0,'bool');
   add('circle',{name:'速度計',x:48,y:50,r:44,color:'#475569',ticks:{on:true,a0:-120,a1:120,n:13,minor:1,lenMaj:6,lenMin:3,inset:2,colMaj:'#e5e7eb',colMin:'#64748b',lbl:true,lblMin:0,lblMax:130,lblEvery:2,lblDec:0,lblR:27,lblColor:'#e5e7eb'}});
-  add('arc',{name:'ATC制限(連動)',x:48,y:50,r:42,thick:2,a0:-120,a1:120,var:lim,min:0,max:130,color:'#facc15'});
-  add('needle',{name:'速度針',x:48,y:50,len:37,tail:8,style:'line',hub:2,a0:-120,a1:120,var:sp,min:0,max:130,color:'#ffffff'});
-  add('text',{name:'速度',x:48,y:70,var:sp,dec:0,pad:3,align:'c',color:'#e5e7eb'});
-  add('text',{name:'単位',x:48,y:78,pre:'KM/H',var:null,noVar:1,align:'c',color:'#64748b'});
-  add('text',{name:'NOTCH見出し',x:100,y:6,pre:'NOTCH',var:null,noVar:1,color:'#94a3b8'});
-  add('text',{name:'ノッチ値',x:100,y:15,var:nt,dec:0,color:'#4ade80'});
-  add('text',{name:'BP見出し',x:116,y:34,pre:'BP KPA',var:null,noVar:1,color:'#94a3b8'});
-  add('text',{name:'BP値',x:116,y:43,var:bp,dec:0,mode:'floor',color:'#38bdf8'});
-  add('bar',{name:'BPバー',x:100,y:34,w:10,h:50,dir:'u',var:bp,min:0,max:500,color:'#38bdf8',bg:{on:true,color:'#0e1b2a'}});
-  add('rect',{name:'ドア灯',x:116,y:80,w:38,h:10,color:'#ef4444',cond:{on:true,v:dr,op:'==',val:1}});
-  add('text',{name:'ドア文字',x:122,y:83,pre:'DOOR',var:null,noVar:1,color:'#ffffff',cond:{on:true,v:dr,op:'==',val:1}});}
+  add('arc',{name:'ATC制限(連動)',x:48,y:50,r:42,thick:2,a0:-120,a1:120,expr:'limit',min:0,max:130,color:'#facc15'});
+  add('needle',{name:'速度針',x:48,y:50,len:37,tail:8,style:'line',hub:2,a0:-120,a1:120,expr:'speed',min:0,max:130,color:'#ffffff'});
+  add('text',{name:'速度',x:48,y:70,expr:'speed',dec:0,pad:3,align:'c',color:'#e5e7eb'});
+  add('text',{name:'単位',x:48,y:78,pre:'KM/H',noVar:1,align:'c',color:'#64748b'});
+  add('text',{name:'NOTCH見出し',x:100,y:6,pre:'NOTCH',noVar:1,color:'#94a3b8'});
+  add('text',{name:'ノッチ値',x:100,y:15,expr:'notch',dec:0,color:'#4ade80'});
+  add('bar',{name:'ノッチバー(0基準)',x:100,y:24,w:56,h:5,dir:'r',expr:'notch',min:-8,max:5,zero:true,color:'#4ade80',neg:{on:true,color:'#f97316'},bg:{on:true,color:'#0e1b2a'}});
+  add('text',{name:'BP見出し',x:116,y:34,pre:'BP KPA',noVar:1,color:'#94a3b8'});
+  add('text',{name:'BP値',x:116,y:43,expr:'bp',dec:0,mode:'floor',color:'#38bdf8'});
+  add('bar',{name:'BPバー',x:100,y:34,w:10,h:50,dir:'u',expr:'bp',min:0,max:500,color:'#38bdf8',bg:{on:true,color:'#0e1b2a'}});
+  add('rect',{name:'ドア灯',x:116,y:80,w:38,h:10,color:'#ef4444',cond:{on:true,expr:'door',op:'==',val:1}});
+  add('text',{name:'ドア文字',x:122,y:83,pre:'DOOR',noVar:1,color:'#ffffff',cond:{on:true,expr:'door',op:'==',val:1}});}
  else if(name==='plane'){S.screen={w:160,h:160,bg:'#0a1018'};const ias=tv('ias',1,0,400,185),alt=tv('alt',2,0,40000,12400),hd=tv('hdg',3,0,360,70),vs=tv('vs',4,-2000,2000,600),gr=tv('gear',1,0,1,1,'bool');
-  add('text',{name:'IAS見出し',x:4,y:14,pre:'IAS KT',var:null,noVar:1,color:'#94a3b8'});
+  add('text',{name:'IAS見出し',x:4,y:14,pre:'IAS KT',noVar:1,color:'#94a3b8'});
   add('rect',{name:'IAS枠',x:3,y:24,w:34,h:112,fill:false,color:'#475569'});
-  add('bar',{name:'IASマーカー',x:4,y:25,w:32,h:110,dir:'u',style:'mark',mark:2,var:ias,min:0,max:400,color:'#fbbf24',bg:{on:true,color:'#101a26'}});
-  add('text',{name:'IAS値',x:20,y:141,var:ias,dec:0,pad:3,align:'c',color:'#fbbf24'});
-  add('text',{name:'ALT見出し',x:124,y:14,pre:'ALT FT',var:null,noVar:1,color:'#94a3b8'});
+  add('bar',{name:'IASマーカー',x:4,y:25,w:32,h:110,dir:'u',style:'mark',mark:2,expr:'ias',min:0,max:400,color:'#fbbf24',bg:{on:true,color:'#101a26'}});
+  add('text',{name:'IAS値',x:20,y:141,expr:'ias',dec:0,pad:3,align:'c',color:'#fbbf24'});
+  add('text',{name:'ALT見出し',x:124,y:14,pre:'ALT FT',noVar:1,color:'#94a3b8'});
   add('rect',{name:'ALT枠',x:123,y:24,w:34,h:112,fill:false,color:'#475569'});
-  add('bar',{name:'ALTマーカー',x:124,y:25,w:32,h:110,dir:'u',style:'mark',mark:2,var:alt,min:0,max:40000,color:'#4ade80',bg:{on:true,color:'#101a26'}});
-  add('text',{name:'ALT値',x:140,y:141,var:alt,dec:0,mode:'floor',pad:5,align:'c',color:'#4ade80'});
-  add('text',{name:'VS見出し',x:41,y:14,pre:'VS',var:null,noVar:1,color:'#94a3b8'});
-  add('bar',{name:'VSマーカー',x:42,y:24,w:8,h:112,dir:'u',style:'mark',mark:3,var:vs,min:-2000,max:2000,color:'#38bdf8',bg:{on:true,color:'#101a26'}});
+  add('bar',{name:'ALTマーカー',x:124,y:25,w:32,h:110,dir:'u',style:'mark',mark:2,expr:'alt',min:0,max:40000,color:'#4ade80',bg:{on:true,color:'#101a26'}});
+  add('text',{name:'ALT値',x:140,y:141,expr:'alt',dec:0,mode:'floor',pad:5,align:'c',color:'#4ade80'});
+  add('text',{name:'VS見出し',x:41,y:14,pre:'VS',noVar:1,color:'#94a3b8'});
+  add('bar',{name:'VSマーカー',x:42,y:24,w:8,h:112,dir:'u',style:'mark',mark:3,expr:'vs',min:-2000,max:2000,color:'#38bdf8',bg:{on:true,color:'#101a26'}});
   add('line',{name:'VS中心線',x1:40,y1:80,x2:52,y2:80,color:'#94a3b8'});
-  add('text',{name:'VS値',x:46,y:141,var:vs,dec:0,mode:'floor',align:'c',color:'#38bdf8'});
+  add('text',{name:'VS値',x:46,y:141,expr:'vs',dec:0,mode:'floor',align:'c',color:'#38bdf8'});
   add('circle',{name:'方位リング',x:88,y:84,r:33,color:'#64748b',ticks:{on:true,a0:0,a1:360,n:12,minor:2,lenMaj:5,lenMin:2,inset:1,colMaj:'#e2e8f0',colMin:'#64748b',lbl:true,lblMin:0,lblMax:360,lblEvery:3,lblDec:0,lblR:20,lblColor:'#e2e8f0'}});
-  add('needle',{name:'方位針',x:88,y:84,len:28,tail:0,style:'tri',width:5,hub:0,a0:0,a1:360,var:hd,min:0,max:360,color:'#f43f5e'});
-  add('text',{name:'HDG値',x:88,y:126,pre:'HDG ',var:hd,dec:0,mode:'floor',pad:3,align:'c',color:'#f8fafc'});
-  add('text',{name:'脚(下げ)',x:88,y:148,pre:'GEAR DN',var:null,noVar:1,color:'#4ade80',align:'c',cond:{on:true,v:gr,op:'==',val:1}});
-  add('text',{name:'脚(上げ)',x:88,y:148,pre:'GEAR UP',var:null,noVar:1,color:'#64748b',align:'c',cond:{on:true,v:gr,op:'==',val:0}});}
+  add('needle',{name:'方位針',x:88,y:84,len:28,tail:0,style:'tri',width:5,hub:0,a0:0,a1:360,expr:'hdg',min:0,max:360,color:'#f43f5e'});
+  add('text',{name:'HDG値',x:88,y:126,pre:'HDG ',expr:'hdg',dec:0,mode:'floor',pad:3,align:'c',color:'#f8fafc'});
+  add('text',{name:'脚(下げ)',x:88,y:148,pre:'GEAR DN',noVar:1,color:'#4ade80',align:'c',cond:{on:true,expr:'gear',op:'==',val:1}});
+  add('text',{name:'脚(上げ)',x:88,y:148,pre:'GEAR UP',noVar:1,color:'#64748b',align:'c',cond:{on:true,expr:'gear',op:'==',val:0}});}
  else {S.screen={w:96,h:96,bg:'#000000'}}
  S.sel=S.layers.length?S.layers[S.layers.length-1].id:null;hist=[];hi=-1;afterLoad();commit();toast(name==='blank'?'白紙にしました(「元に戻す」で復帰)':'サンプルを読み込みました')}
 
@@ -777,7 +867,7 @@ $('#copylua').onclick=async()=>{const t=$('#luaout');t.value=genLua(LO);try{awai
 $('#proj').onclick=()=>{$('#projtxt').value=JSON.stringify({S,V});$('#modal').hidden=false};
 $('#projclose').onclick=()=>$('#modal').hidden=true;
 $('#projcopy').onclick=async()=>{const t=$('#projtxt');try{await navigator.clipboard.writeText(t.value);toast('コピーしました')}catch(e){t.select()}};
-$('#projload').onclick=()=>{try{const o=JSON.parse($('#projtxt').value);if(!o.S||!o.S.layers)throw 0;S=o.S;V=o.V||{};fixVals();SW.clear();hist=[];hi=-1;afterLoad();commit();$('#modal').hidden=true;toast('読み込みました')}catch(e){toast('JSONを読み込めませんでした')}};
+$('#projload').onclick=()=>{try{const o=JSON.parse($('#projtxt').value);if(!o.S||!o.S.layers)throw 0;S=o.S;migrate(S);V=o.V||{};fixVals();SW.clear();hist=[];hi=-1;afterLoad();commit();$('#modal').hidden=true;toast('読み込みました')}catch(e){toast('JSONを読み込めませんでした')}};
 $('#imgfile').onchange=e=>{const f=e.target.files[0];e.target.value='';if(!f)return;const url=URL.createObjectURL(f);const img=new Image();img.onload=()=>{
   const W=S.screen.w,H=S.screen.h,sc=Math.min(W/img.width,H/img.height),w=Math.max(1,Math.round(img.width*sc)),hh=Math.max(1,Math.round(img.height*sc));
   const c=document.createElement('canvas');c.width=w;c.height=hh;const x=c.getContext('2d');x.drawImage(img,0,0,w,hh);const d=x.getImageData(0,0,w,hh).data;const pts={},lv=6,q=v=>Math.round(Math.round(v/255*(lv-1))*255/(lv-1));
@@ -795,11 +885,8 @@ document.addEventListener('keydown',e=>{const tg=e.target.tagName;if(tg==='INPUT
 function afterLoad(){S.sel=S.layers.find(l=>l.id===S.sel)?S.sel:null;syncScreenUI();buildPal();buildLayers();buildInspector();buildVars();updUndo();relayout();dirtyR=true;requestRender();gen()}
 
 /* ---------- boot ---------- */
-(function boot(){let ok=false;try{const raw=localStorage.getItem('meter-dot-studio.v1');if(raw){const o=JSON.parse(raw);if(o.S&&o.S.layers){S=o.S;V=o.V||{};curColor=o.curColor||curColor;recent=o.pal||[];if(o.lo)Object.assign(LO,o.lo);syncLO();fixVals();ok=true;hist=[JSON.stringify(S)];hi=0;afterLoad();$('#curcolor').value=curColor}}}catch(e){}
+(function boot(){let ok=false;try{const raw=localStorage.getItem('meter-dot-studio.v1');if(raw){const o=JSON.parse(raw);if(o.S&&o.S.layers){S=o.S;migrate(S);V=o.V||{};curColor=o.curColor||curColor;recent=o.pal||[];if(o.lo)Object.assign(LO,o.lo);syncLO();fixVals();ok=true;hist=[JSON.stringify(S)];hi=0;afterLoad();$('#curcolor').value=curColor}}}catch(e){}
  if(!ok){loadTemplate('car')}
  setCur(curColor);setTool('select');
  window.__app={S:()=>S,V:()=>V,genLua,loadTemplate,LO,setTool,render:()=>{dirtyR=true;paint()}}})();
 </script>
-
-</body>
-</html>
