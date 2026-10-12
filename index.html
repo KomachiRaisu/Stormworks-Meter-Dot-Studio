@@ -282,9 +282,10 @@ const DEF={
  rect:()=>({x:10,y:10,w:30,h:16,fill:true}),
  line:()=>({x1:10,y1:10,x2:50,y2:30}),
  needle:()=>({x:48,y:48,len:30,tail:6,style:'line',width:3,hub:0,a0:-135,a1:135,expr:'',min:0,max:100}),
- bar:()=>({x:10,y:10,w:50,h:8,dir:'r',style:'solid',segs:10,gap:1,mark:2,expr:'',zero:false,neg:{on:false,color:'#f97316'},min:0,max:100,bg:{on:true,color:'#1e293b'},warn:{on:false,at:80,color:'#ef4444'}}),
+ bar:()=>({x:10,y:10,w:50,h:8,dir:'r',style:'solid',segs:10,gap:1,mark:2,expr:'',zero:false,neg:{on:false,color:'#f97316'},min:0,max:100,bg:{on:true,color:'#1e293b'},warn:{on:false,at:80,color:'#ef4444'},ticks:BTICK()}),
  text:()=>({x:10,y:10,pre:'',suf:'',expr:'',mode:'round',dec:0,pad:0,align:'l'})
 };
+const BTICK=()=>({on:false,n:5,minor:1,side:'b',gap:1,lenMaj:3,lenMin:2,colMaj:'#e2e8f0',colMin:'#64748b',lbl:false,lblDec:0,lblEvery:1,lblSide:'b',lblColor:'#e2e8f0'});
 const VARTYPES=new Set(['arc','needle','bar','text']);
 function ensureVar(){let v=S.vars.find(x=>x.type!=='bool');if(!v){v={id:'V'+(S.nid++),name:'value',ch:S.vars.filter(x=>x.type!=='bool').length+1,min:0,max:100,init:50,type:'num'};S.vars.push(v);V[v.id]=50;buildVars()}return exprName(v)}
 function mkLayer(type,props={},dry=false){
@@ -364,7 +365,7 @@ function compileExpr(src){src=(src||'').trim();if(!src)return EMPTY;
 const hasE=L=>!!(L.expr&&L.expr.trim());
 function getE(src){const c=compileExpr(src);if(!c.fn)return 0;const v=c.fn();return Number.isFinite(v)?v:0}
 function migrate(st){const nameOf=id=>{const v=st.vars.find(x=>x.id===id);return v?exprName(v):''};
- for(const L of st.layers){if('var' in L){if(L.expr===undefined)L.expr=L.var?nameOf(L.var):'';delete L.var}
+ for(const L of st.layers){if(L.type==='bar'&&!L.ticks)L.ticks=BTICK();if('var' in L){if(L.expr===undefined)L.expr=L.var?nameOf(L.var):'';delete L.var}
   if(L.cond&&'v' in L){if(L.cond.expr===undefined)L.cond.expr=L.cond.v?nameOf(L.cond.v):'';delete L.cond.v}}}
 function renameRefs(a,b){const re=new RegExp('\\b'+a+'\\b','g');for(const L of S.layers){if(L.expr)L.expr=L.expr.replace(re,b);if(L.cond&&L.cond.expr)L.cond.expr=L.cond.expr.replace(re,b)}}
 /* ---- number formatting (負の値も自然に: 0方向への切り捨て / 0から遠ざける切り上げ / 四捨五入は絶対値で) ---- */
@@ -375,6 +376,19 @@ function textStr(L){return !hasE(L)?L.pre:L.pre+fmtNum(getE(L.expr),L.mode,L.dec
 function condOk(L){const c=L.cond;if(!c||!c.on||!c.expr||!c.expr.trim())return true;const cc=compileExpr(c.expr);if(!cc.fn)return true;
  if(cc.sole){const vv=S.vars.find(x=>x.id===cc.sole);if(vv&&vv.type==='bool')return ((V[cc.sole]||0)!==0)===(c.val>=.5)}
  const v=getE(c.expr);switch(c.op){case'>':return v>c.val;case'<':return v<c.val;case'>=':return v>=c.val;case'<=':return v<=c.val;case'==':return v===c.val;case'~=':return v!==c.val}return true}
+/* ---- バーの目盛り: 位置計算はプレビューとLuaで同じ式 ---- */
+function tickEdges(L){const T=L.ticks,hz=L.dir==='r'||L.dir==='l',inn=T.side[0]==='i',ls=T.side.replace('i',''),B0=hz?L.y:L.x,B1=hz?L.y+L.h:L.x+L.w,g=T.gap;
+ return{hz,outer:{a:!inn&&ls.includes('a'),b:!inn&&ls.includes('b')},
+  e:ls.split('').map(sd=>inn?(sd==='a'?{c:B0+g,neg:false}:{c:B1-g,neg:true}):(sd==='a'?{c:B0-g,neg:true}:{c:B1+g,neg:false}))}}
+function barTickPlan(L){const T=L.ticks,N=barN(L),hz=L.dir==='r'||L.dir==='l',M=T.minor+1,TT=T.n*M,t=Math.max(1,L.mark),mk=L.style==='mark',ops=[],txt=[];
+ const pos=k=>mk?Math.floor(k*(N-t)/TT+.5)+Math.floor(t/2):Math.min(N-1,Math.floor(k*N/TT+.5));
+ const ax=q=>L.dir==='r'?L.x+q:L.dir==='l'?L.x+N-1-q:L.dir==='u'?L.y+N-1-q:L.y+q;
+ const E=tickEdges(L),oa=E.outer.a?T.gap+T.lenMaj:0,ob=E.outer.b?T.gap+T.lenMaj:0;
+ for(let i=0;i<=TT;i++){const maj=i%M===0,len=maj?T.lenMaj:T.lenMin,A0=ax(pos(i));
+  for(const d of E.e){const v=d.neg?d.c-len:d.c;ops.push({c:maj?T.colMaj:T.colMin,r:hz?[A0,v,1,len]:[v,A0,len,1]})}}
+ if(T.lbl)for(let i=0;i<=T.n;i+=Math.max(1,T.lblEvery|0)){const tx=lblFmt(L.min+(L.max-L.min)*i/T.n,T.lblDec),A0=ax(pos(i*M));
+  txt.push(hz?[Math.floor(A0+1-tx.length*2.5),T.lblSide==='a'?L.y-oa-6:L.y+L.h+ob+1,tx]:[T.lblSide==='a'?L.x-oa-1-tx.length*5:L.x+L.w+ob+2,A0-2,tx])}
+ return{ops,txt}}
 const arcStep=r=>+clamp(34/Math.max(r,1),.05,5).toFixed(3);
 function arcRings(L){const th=Math.max(1,L.thick),nr=Math.max(0,Math.ceil((th-1)/.6-1e-9));return{nr,dq:nr?+((th-1)/nr).toFixed(4):0}}
 function barN(L){return(L.dir==='r'||L.dir==='l')?L.w:L.h}
@@ -406,17 +420,19 @@ function drawLayer(R,L){
   else R.line(L.x-s*L.tail,L.y+c*L.tail,tx,ty);
   if(L.hub>0)R.circF(L.x,L.y,L.hub);break}
  case'bar':{const N=barN(L),f=norm(getE(L.expr),L.min,L.max),rc=(a,b)=>barRect(L,a,b),z0=norm(0,L.min,L.max),zero=!!L.zero&&L.style!=='mark';
+  const dT=()=>{if(L.ticks&&L.ticks.on&&L.ticks.n>0){const P=barTickPlan(L);for(const o of P.ops){R.col(o.c,A);R.rectF(...o.r)}if(P.txt.length){R.col(L.ticks.lblColor,A);for(const q of P.txt)R.text(q[0],q[1],q[2])}}};
   const mainC=zero&&L.neg&&L.neg.on&&f<z0?L.neg.color:L.color;
   if(L.style==='seg'){const g=segGeom(L),k=Math.floor(f*g.n+.5),WI=Math.ceil(g.n*L.warn.at/100-1e-9),lo=Math.min(f,z0),hi=Math.max(f,z0);
    for(let i=0;i<g.n;i++){const a=Math.floor(i*g.step+.5),b=Math.floor(i*g.step+g.len+.5),m=(i+.5)/g.n;
     const lit=zero?(m>lo&&m<=hi):i<k;
     if(lit){R.col(zero?mainC:(L.warn.on&&i>=WI?L.warn.color:L.color),A);R.rectF(...rc(a,b))}else if(L.bg.on){R.col(L.bg.color,A);R.rectF(...rc(a,b))}}}
   else{if(L.bg.on){R.col(L.bg.color,A);R.rectF(L.x,L.y,L.w,L.h)}
-   if(L.style==='mark'){const t=Math.max(1,L.mark),n=Math.floor(f*(N-t)+.5);R.col(L.color,A);R.rectF(...rc(n,n+t))}
+   if(L.style==='mark'){dT();const t=Math.max(1,L.mark),n=Math.floor(f*(N-t)+.5);R.col(L.color,A);R.rectF(...rc(n,n+t))}
    else if(zero){const n=Math.floor(f*N+.5),zp=Math.floor(z0*N+.5),a=Math.min(n,zp),b=Math.max(n,zp);if(b>a){R.col(mainC,A);R.rectF(...rc(a,b))}}
    else{const n=Math.floor(f*N+.5),wz=Math.round(L.warn.at/100*N);
     if(L.warn.on){const m=Math.min(n,wz);if(m>0){R.col(L.color,A);R.rectF(...rc(0,m))}if(n>wz){R.col(L.warn.color,A);R.rectF(...rc(wz,n))}}
     else if(n>0){R.col(L.color,A);R.rectF(...rc(0,n))}}}
+  if(L.style!=='mark')dT();
   break}
  case'text':{const s=textStr(L);R.col(L.color,A);const x=L.align==='c'?Math.floor(L.x-s.length*2.5+.5):L.align==='r'?L.x-s.length*5:L.x;R.text(x,L.y,s);break}
  }
@@ -558,7 +574,22 @@ function genLayer(L,nm,ctx){const o=[],p=s=>o.push(s),A=L.alpha,lx=src=>compileE
   if(L.style==='tri'){p(`local bx,by=${L.x}-s*${par(L.tail)},${L.y}+c*${par(L.tail)}`);p(`local hw=${nf(L.width/2)}`);p('screen.drawTriangleF(tx,ty,bx+c*hw,by+s*hw,bx-c*hw,by-s*hw)')}
   else p(`screen.drawLine(${L.tail?`${L.x}-s*${par(L.tail)},${L.y}+c*${par(L.tail)}`:`${L.x},${L.y}`},tx,ty)`);
   if(L.hub>0)p(`screen.drawCircleF(${L.x},${L.y},${L.hub})`);p('end');break}
- case'bar':{const N=barN(L),zero=!!L.zero&&L.style!=='mark',z0=norm(0,L.min,L.max),negOn=zero&&L.neg&&L.neg.on;p('do');p(`local f=norm(${lx(L.expr)},${nf(L.min)},${nf(L.max)})`);
+ case'bar':{const N=barN(L),zero=!!L.zero&&L.style!=='mark',z0=norm(0,L.min,L.max),negOn=zero&&L.neg&&L.neg.on;
+  function tk(){const T=L.ticks;if(T&&T.on&&T.n>0){const hz=L.dir==='r'||L.dir==='l',M=T.minor+1,TT=T.n*M,t=Math.max(1,L.mark),mk=L.style==='mark',X=L.x,Y=L.y;
+   const posL=k=>mk?`math.floor(${k}*${N-t}/${TT}+.5)+${Math.floor(t/2)}`:`math.min(${N-1},math.floor(${k}*${N}/${TT}+.5))`;
+   const axL=L.dir==='r'?`${par(X)}+q`:L.dir==='l'?`${par(X+N-1)}-q`:L.dir==='u'?`${par(Y+N-1)}-q`:`${par(Y)}+q`;
+   const E=tickEdges(L),oa=E.outer.a?T.gap+T.lenMaj:0,ob=E.outer.b?T.gap+T.lenMaj:0;
+   p(`for i=0,${TT} do`);p(`local q=${posL('i')}`);
+   if(M>1){p(`local l=${nf(T.lenMin)}`);p(`if i%${M}==0 then`);p(lcol(T.colMaj,A));p(`l=${nf(T.lenMaj)}`);p('else');p(lcol(T.colMin,A));p('end')}
+   else{p(lcol(T.colMaj,A));p(`local l=${nf(T.lenMaj)}`)}
+   for(const d of E.e){const v=d.neg?`${par(d.c)}-l`:d.c;if(hz)p(`screen.drawRectF(${axL},${v},1,l)`);else p(`screen.drawRectF(${v},${axL},l,1)`)}
+   p('end');
+   if(T.lbl){p(lcol(T.lblColor,A));p(`for i=0,${T.n},${Math.max(1,T.lblEvery|0)} do`);p(`local q=${posL(M>1?`i*${M}`:'i')}`);
+    const vE=`${nf(L.min)}+${nf(L.max-L.min)}*i/${T.n}`,K=Math.pow(10,T.lblDec);p(`local t=string.format("%.${T.lblDec}f",${T.lblDec?`math.floor((${vE})*${K}+.5)/${K}`:`math.floor(${vE}+.5)`})`);
+    if(hz)p(`screen.drawText(math.floor(${axL}+1-#t*2.5),${T.lblSide==='a'?Y-oa-6:Y+L.h+ob+1},t)`);
+    else p(`screen.drawText(${T.lblSide==='a'?`${par(X-oa-1)}-#t*5`:X+L.w+ob+2},${axL}-2,t)`);
+    p('end')}}}
+  p('do');p(`local f=norm(${lx(L.expr)},${nf(L.min)},${nf(L.max)})`);
   const mainCol=()=>{if(negOn){p(`if f<${nf(z0)} then`);p(lcol(L.neg.color,A));p('else');p(lcol(L.color,A));p('end')}else p(lcol(L.color,A))};
   if(L.style==='seg'){const g=segGeom(L),WI=Math.ceil(g.n*L.warn.at/100-1e-9);
    if(zero)p(`local lo,hi=math.min(f,${nf(z0)}),math.max(f,${nf(z0)})`);else p(`local k=math.floor(f*${g.n}+.5)`);
@@ -567,12 +598,14 @@ function genLayer(L,nm,ctx){const o=[],p=s=>o.push(s),A=L.alpha,lx=src=>compileE
    if(zero)mainCol();else if(L.warn.on){p(`if i>=${WI} then`);p(lcol(L.warn.color,A));p('else');p(lcol(L.color,A));p('end')}else p(lcol(L.color,A));
    p(`screen.drawRectF(${barRectS(L,'a','b')})`);if(L.bg.on){p('else');p(lcol(L.bg.color,A));p(`screen.drawRectF(${barRectS(L,'a','b')})`)}p('end');p('end')}
   else{if(L.bg.on){p(lcol(L.bg.color,A));p(`screen.drawRectF(${L.x},${L.y},${L.w},${L.h})`)}
-   if(L.style==='mark'){const t=Math.max(1,L.mark);p(`local n=math.floor(f*${N-t}+.5)`);p(lcol(L.color,A));p(`screen.drawRectF(${barRectS(L,'n',`n+${t}`)})`)}
+   if(L.style==='mark'){tk();const t=Math.max(1,L.mark);p(`local n=math.floor(f*${N-t}+.5)`);p(lcol(L.color,A));p(`screen.drawRectF(${barRectS(L,'n',`n+${t}`)})`)}
    else if(zero){const zp=Math.floor(z0*N+.5);p(`local n=math.floor(f*${N}+.5)`);p(`local a,b=math.min(n,${zp}),math.max(n,${zp})`);p('if b>a then');mainCol();p(`screen.drawRectF(${barRectS(L,'a','b')})`);p('end')}
    else{const wz=Math.round(L.warn.at/100*N);p(`local n=math.floor(f*${N}+.5)`);
     if(L.warn.on){p(`local m=math.min(n,${wz})`);p('if m>0 then');p(lcol(L.color,A));p(`screen.drawRectF(${barRectS(L,0,'m')})`);p('end');p(`if n>${wz} then`);p(lcol(L.warn.color,A));p(`screen.drawRectF(${barRectS(L,wz,'n')})`);p('end')}
     else{p('if n>0 then');p(lcol(L.color,A));p(`screen.drawRectF(${barRectS(L,0,'n')})`);p('end')}}}
-  p('end');break}
+  p('end');
+  if(L.style!=='mark')tk();
+  break}
  case'text':{if(!hasE(L)){const s=L.pre;const x=L.align==='c'?Math.floor(L.x-s.length*2.5+.5):L.align==='r'?L.x-s.length*5:L.x;p(lcol(L.color,A));p(`screen.drawText(${x},${L.y},${lstr(s)})`)}
   else{const K=Math.pow(10,L.dec),e=lx(L.expr),simple=/^[\w.]+$/.test(e);p('do');p(`local t=${L.dec?`${simple?e:`(${e})`}*${K}`:e}`);
    const fin_=x=>L.dec?`(${x})/${K}`:x;
@@ -669,7 +702,7 @@ function buildPal(){const p=$('#pal');p.innerHTML='';[...recent,...PAL].forEach(
 function setCur(c,addRecent){curColor=c;$('#curcolor').value=c;if(addRecent){recent=[c,...recent.filter(x=>x!==c)].slice(0,6)}buildPal();$('#stcol').textContent=c;save()}
 $('#curcolor').addEventListener('input',e=>{curColor=e.target.value;$('#stcol').textContent=curColor});
 $('#curcolor').addEventListener('change',e=>setCur(e.target.value,true));
-$('#applycol').onclick=()=>{const L=selLayer();if(!L){toast('レイヤーを選択してください');return}if(L.type==='dots'){for(const k in L.pts)L.pts[k]=curColor}else{L.color=curColor;if(L.ticks){L.ticks.colMaj=L.ticks.colMin=L.ticks.lblColor=curColor}}commit();buildLayers();buildInspector();requestRender();gen()};
+$('#applycol').onclick=()=>{const L=selLayer();if(!L){toast('レイヤーを選択してください');return}if(L.type==='dots'){for(const k in L.pts)L.pts[k]=curColor}else{L.color=curColor;if(L.type==='circle'&&L.ticks){L.ticks.colMaj=L.ticks.colMin=L.ticks.lblColor=curColor}}commit();buildLayers();buildInspector();requestRender();gen()};
 $('#brush').onchange=e=>brush=+e.target.value;
 
 function posOf(e){const r=cv.getBoundingClientRect();return{x:Math.floor((e.clientX-r.left)/(r.width/S.screen.w)),y:Math.floor((e.clientY-r.top)/(r.height/S.screen.h))}}
@@ -780,6 +813,11 @@ function buildInspector(keepFocus){const box=$('#inspector');if(keepFocus&&box.c
    ...(seg?[row('セグメント',h('span',{},'数'),fin(L,'segs',{min:1}),h('span',{},'隙間'),fin(L,'gap',{min:0}))]:[]),...(L.style==='mark'?[row('マーカー幅',fin(L,'mark',{min:1}))]:[]),
    row('値(式)',fexpr(L,'expr')),row('値の範囲',h('span',{},'最小'),fin(L,'min',{step:'any'}),h('span',{},'最大'),fin(L,'max',{step:'any'})),...(L.style!=='mark'?[row('基準',fck(L,'zero',true,'0を基準に伸ばす(マイナス対応)'))]:[])));
   items.push(sec('背景・警告色',true,row('背景',fck(L.bg,'on',true,'表示'),...(L.bg.on?[fcol(L.bg,'color')]:[])),...(L.style!=='mark'&&L.zero?[row('マイナス色',fck(L.neg,'on',true,'別の色にする'),...(L.neg.on?[fcol(L.neg,'color')]:[]))]:[]),...(L.style!=='mark'&&!L.zero?[row('警告色',fck(L.warn,'on',true,'レッドゾーン'),...(L.warn.on?[fcol(L.warn,'color')]:[])),...(L.warn.on?[row('開始位置',fin(L.warn,'at',{min:0,max:100}),h('span',{class:'hint'},'範囲の何%から')) ]:[])]:[])))}
+  if(T==='bar'){const t=L.ticks,hz=L.dir==='r'||L.dir==='l',sd=[['a',hz?'上側':'左側'],['b',hz?'下側':'右側']];
+   items.push(sec('目盛り(バー・マーカー)',true,row('目盛り',fck(t,'on',true,'表示する')),...(t.on?[row('分割数',fin(t,'n',{min:1,label:'分割数'}),h('span',{class:'hint'},'値の範囲(最小〜最大)を等分')),row('補助目盛',fin(t,'minor',{min:0,label:'補助'}),h('span',{class:'hint'},'主の間に入れる本数')),
+    row('位置',fsel(t,'side',[['a',(hz?'上':'左')+'(外側)'],['b',(hz?'下':'右')+'(外側)'],['ab','両側(外側)'],['ia',(hz?'上':'左')+'(内側)'],['ib',(hz?'下':'右')+'(内側)'],['iab','両側(内側)']])),row('長さ',h('span',{},'主'),fin(t,'lenMaj',{min:1,label:'主長'}),h('span',{},'補助'),fin(t,'lenMin',{min:1,label:'補助長'})),row(t.side[0]==='i'?'端から':'バーから',fin(t,'gap',{min:0,label:'間隔'}),h('span',{class:'hint'},t.side[0]==='i'?'px内側へ':'px離す')),
+    row('色',h('span',{},'主'),fcol(t,'colMaj'),h('span',{},'補助'),fcol(t,'colMin')),
+    row('数値',fck(t,'lbl',true,'ラベルを表示')),...(t.lbl?[row('ラベル位置',fsel(t,'lblSide',sd)),row('間引き',fin(t,'lblEvery',{min:1}),h('span',{class:'hint'},'N個おきに表示')),row('小数桁',fin(t,'lblDec',{min:0,max:4})),row('ラベル色',fcol(t,'lblColor')),h('div',{class:'hint'},'ラベルの数値は「値の範囲」の最小〜最大から自動で計算されます')]:[])]:[])))}
  if(T==='text')items.push(sec('文字',true,xy(L,'x','y'),row('値(式)',fexpr(L,'expr')),row('前の文字',ftx(L,'pre')),
    ...(hasE(L)?[row('後の文字',ftx(L,'suf')),row('端数処理',fsel(L,'mode',[['round','四捨五入'],['floor','切り捨て(0に近づける)'],['ceil','切り上げ(0から離す)']])),row('小数桁数',fin(L,'dec',{min:0,max:6})),row('整数部の桁',fin(L,'pad',{min:0,max:8}),h('span',{class:'hint'},'足りない分は0埋め(例 -005)'))]:[]),
    row('揃え',fsel(L,'align',[['l','左'],['c','中央'],['r','右']])),h('div',{class:'hint'},'表示できるのは半角英数と記号のみ(Stormworksの標準フォント)。1文字=幅5px。')));
@@ -801,10 +839,10 @@ function loadTemplate(name){S=blankState();V={};SW.clear();sweepAll=false;$('#sw
   add('text',{name:'速度(数値)',x:48,y:72,expr:'speed',dec:0,pad:3,align:'c',color:'#f8fafc'});
   add('text',{name:'単位',x:48,y:80,pre:'KM/H',noVar:1,align:'c',color:'#64748b'});
   add('text',{name:'RPM',x:100,y:8,pre:'RPM ',expr:'rpm/1000',dec:1,suf:'K',color:'#e2e8f0'});
-  add('bar',{name:'RPMバー',x:100,y:18,w:56,h:10,dir:'r',style:'seg',segs:16,gap:1,expr:'rpm',min:0,max:8000,color:'#22d3ee',bg:{on:true,color:'#16202c'},warn:{on:true,at:80,color:'#ef4444'}});
+  add('bar',{name:'RPMバー',x:100,y:18,w:56,h:10,dir:'r',style:'seg',segs:16,gap:1,expr:'rpm',min:0,max:8000,ticks:{...BTICK(),on:true,n:8,minor:0,side:'b',lenMaj:2},color:'#22d3ee',bg:{on:true,color:'#16202c'},warn:{on:true,at:80,color:'#ef4444'}});
   add('text',{name:'FUEL見出し',x:100,y:40,pre:'FUEL',noVar:1,color:'#94a3b8'});
   add('text',{name:'FUEL値',x:156,y:40,expr:'fuel',suf:'%',align:'r',color:'#facc15'});
-  add('bar',{name:'燃料バー',x:100,y:50,w:56,h:6,dir:'r',expr:'fuel',min:0,max:100,color:'#facc15',bg:{on:true,color:'#2a2410'}});
+  add('bar',{name:'燃料バー',x:100,y:50,w:50,h:6,dir:'r',expr:'fuel',min:0,max:100,ticks:{...BTICK(),on:true,n:4,minor:0,lenMaj:2,lbl:true,lblEvery:2},color:'#facc15',bg:{on:true,color:'#2a2410'}});
   add('dots',{name:'燃料アイコン',pts:dotsFrom(['..#..','..#..','.###.','.###.','#####','#####','.###.'],101,70,'#facc15')});
   add('text',{name:'燃料警告',x:112,y:72,pre:'LOW FUEL',noVar:1,color:'#ef4444',cond:{on:true,expr:'fuel',op:'<',val:15}});
   add('rect',{name:'ハイビーム灯',x:138,y:82,w:16,h:9,color:'#2563eb',noVar:1,cond:{on:true,expr:'highbeam',op:'==',val:1}});
@@ -827,7 +865,7 @@ function loadTemplate(name){S=blankState();V={};SW.clear();sweepAll=false;$('#sw
  else if(name==='plane'){S.screen={w:160,h:160,bg:'#0a1018'};const ias=tv('ias',1,0,400,185),alt=tv('alt',2,0,40000,12400),hd=tv('hdg',3,0,360,70),vs=tv('vs',4,-2000,2000,600),gr=tv('gear',1,0,1,1,'bool');
   add('text',{name:'IAS見出し',x:4,y:14,pre:'IAS KT',noVar:1,color:'#94a3b8'});
   add('rect',{name:'IAS枠',x:3,y:24,w:34,h:112,fill:false,color:'#475569'});
-  add('bar',{name:'IASマーカー',x:4,y:25,w:32,h:110,dir:'u',style:'mark',mark:2,expr:'ias',min:0,max:400,color:'#fbbf24',bg:{on:true,color:'#101a26'}});
+  add('bar',{name:'IASマーカー',x:4,y:25,w:32,h:110,dir:'u',style:'mark',mark:2,expr:'ias',min:0,max:400,ticks:{...BTICK(),on:true,n:8,minor:1,side:'b',gap:1,lenMaj:3,lenMin:2},color:'#fbbf24',bg:{on:true,color:'#101a26'}});
   add('text',{name:'IAS値',x:20,y:141,expr:'ias',dec:0,pad:3,align:'c',color:'#fbbf24'});
   add('text',{name:'ALT見出し',x:124,y:14,pre:'ALT FT',noVar:1,color:'#94a3b8'});
   add('rect',{name:'ALT枠',x:123,y:24,w:34,h:112,fill:false,color:'#475569'});
@@ -888,5 +926,5 @@ function afterLoad(){S.sel=S.layers.find(l=>l.id===S.sel)?S.sel:null;syncScreenU
 (function boot(){let ok=false;try{const raw=localStorage.getItem('meter-dot-studio.v1');if(raw){const o=JSON.parse(raw);if(o.S&&o.S.layers){S=o.S;migrate(S);V=o.V||{};curColor=o.curColor||curColor;recent=o.pal||[];if(o.lo)Object.assign(LO,o.lo);syncLO();fixVals();ok=true;hist=[JSON.stringify(S)];hi=0;afterLoad();$('#curcolor').value=curColor}}}catch(e){}
  if(!ok){loadTemplate('car')}
  setCur(curColor);setTool('select');
- window.__app={S:()=>S,V:()=>V,genLua,loadTemplate,LO,setTool,render:()=>{dirtyR=true;paint()}}})();
+ window.__app={S:()=>S,V:()=>V,mkLayer,genLua,loadTemplate,LO,setTool,render:()=>{dirtyR=true;paint()}}})();
 </script>
