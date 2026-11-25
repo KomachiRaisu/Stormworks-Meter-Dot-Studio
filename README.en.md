@@ -4,7 +4,7 @@
 
 A browser tool for making Stormworks gauges and digital panels: **paint it, move the values live, and export it as Lua, all on one screen.**
 
-> **▶ Try it: https://YOUR-USERNAME.github.io/Stormworks-Meter-Dot-Studio/**
+> **▶ Try it: https://KomachiRaisu.github.io/Stormworks-Meter-Dot-Studio/**
 > (No install. Just open it in a browser.)
 
 ![Screenshot](docs/screenshot.png)
@@ -51,7 +51,7 @@ It is a single `index.html` with no build step. Open it in a browser. Work is au
 
 ## Disclaimer
 
-Stormworks: Build and Rescue is a trademark of Sunfox Games. This is an **unofficial fan-made tool** and is not affiliated with Sunfox Games.
+Stormworks: Build and Rescue is a trademark of Sunfox Games. This is an **unofficial fan-made tool** and is not affiliated with Sunfox Games.I’m worried that this might be a copycat of someone else’s work, or that it’s already been done, or that it overlaps with something else, so please let me know straight away if that’s the case!! If there’s a problem, I’ll take it down straight away!!! Also, as this was created using AI (Claude), there might be some glitches. I’ve tested it on PonyIDE just in case, so please let me know if you spot any issues.
 
 ## License
 
