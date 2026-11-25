@@ -180,6 +180,7 @@ body.pv #tools,body.pv aside{opacity:.35;pointer-events:none}
             <label><input type="checkbox" id="o_comments">コメントを付ける</label>
             <label><input type="checkbox" id="o_min">圧縮(インデント削除)</label>
             <label><input type="checkbox" id="o_bg">背景色で塗りつぶす</label>
+            <label title="実機のディスプレイは指定した色より明るく滲んで見えます。エディタと同じ色に見えるよう、出力するsetColorの値を暗く補正します(プレビューの色は変わりません)"><input type="checkbox" id="o_gamma"><b>色補正</b> <select id="o_gmode" aria-label="補正方式"><option value="curve">実測カーブ</option><option value="pow">ガンマ</option></select> γ<input type="number" id="o_gval" min="1" max="3" step="0.01" style="width:60px" aria-label="ガンマ値"></label>
             <label>文字数の上限 <select id="o_limit"><option value="8192">8192字</option><option value="4096">4096字(旧)</option></select></label>
             <span class="hint">最適化: 色指定の重複削除・関数名の別名化・未使用変数の除去・数値の短縮・ドットの文字列化を自動で行います。プレビューのフォントや円の形は実機と数pxずれる場合があります。</span>
           </div>
@@ -271,7 +272,7 @@ class Raster{
 /* ---------- state ---------- */
 let S,V={},SW=new Set(),curColor='#38bdf8',tool='select',previewMode=false,zoom=6,zoomFit=true,showGrid=true;
 let hist=[],hi=-1,drag=null,ghost=null,hover=null,lastR=null,brush=1;
-const LO={comments:false,minify:true,opt:true,bg:false,limit:8192};
+const LO={comments:false,minify:true,opt:true,bg:false,limit:8192,gamma:true,gmode:'curve',gval:2};
 const blankState=()=>({screen:{w:96,h:96,bg:'#000000'},vars:[],layers:[],sel:null,counters:{},nid:1});
 const isObj=o=>o&&typeof o==='object'&&!Array.isArray(o);
 function merge(a,b){for(const k in b){a[k]=isObj(b[k])&&isObj(a[k])?Object.assign({},a[k],b[k]):b[k]}return a}
@@ -526,7 +527,14 @@ function varNames(short,ids){const m={},used=new Set();let si=0;for(const v of S
   if(short){n=si<SHORT.length?SHORT[si]:'v'+(si-SHORT.length+1);si++}
   else{n=(v.name||'v').replace(/[^A-Za-z0-9_]/g,'_');if(!n||/^[0-9]/.test(n))n='v'+n;if(RESERVED.has(n)||/^[a-zA-Z]$/.test(n))n+='_';while(used.has(n))n+='_'}
   used.add(n);m[v.id]=n}return m}
-const lcol=(c,a)=>{const k=hex(c);return `screen.setColor(${k[0]},${k[1]},${k[2]}${a<255?','+a:''})`};
+/* ---- 色補正: 実機で明るく/滲んで見える分を暗く補正する。実測の変換例(入力→出力)を通る単調な曲線(PCHIP)で、全チャンネル共通 ---- */
+const CC_PTS=[[0,0],[17,1],[22,2],[24,2],[34,4],[50,9],[53,12],[66,17],[70,19],[99,38],[113,51],[127,63],[132,70],[150,88],[151,89],[181,131],[184,135],[196,153],[201,161],[204,166],[221,195],[249,247],[254,253],[255,255]];
+const CC_LUT=(()=>{const P=CC_PTS,n=P.length,h=[],dl=[],d=[];for(let i=0;i<n-1;i++){h.push(P[i+1][0]-P[i][0]);dl.push((P[i+1][1]-P[i][1])/h[i])}
+ d[0]=dl[0];d[n-1]=dl[n-2];for(let i=1;i<n-1;i++){if(dl[i-1]*dl[i]<=0)d[i]=0;else{const w1=2*h[i]+h[i-1],w2=h[i]+2*h[i-1];d[i]=(w1+w2)/(w1/dl[i-1]+w2/dl[i])}}
+ const T=[];let k=0;for(let x=0;x<=255;x++){while(k<n-2&&x>P[k+1][0])k++;const t=(x-P[k][0])/h[k],t2=t*t,t3=t2*t,y=(2*t3-3*t2+1)*P[k][1]+(t3-2*t2+t)*h[k]*d[k]+(-2*t3+3*t2)*P[k+1][1]+(t3-t2)*h[k]*d[k+1];T.push(Math.max(0,Math.min(255,Math.round(y))))}
+ return T})();
+const gfix=v=>!LO.gamma?v:LO.gmode==='pow'?Math.round(255*Math.pow(v/255,LO.gval>0?LO.gval:2)):CC_LUT[v];
+const lcol=(c,a)=>{const k=hex(c).map(gfix);return `screen.setColor(${k[0]},${k[1]},${k[2]}${a<255?','+a:''})`};
 const lstr=s=>'"'+String(s).replace(/\\/g,'\\\\').replace(/"/g,'\\"')+'"';
 function luaFmt(vx,mode,dec,pad){const k=Math.pow(10,dec);let e=vx;if(mode==='floor')e=dec?`math.floor(${vx}*${k}+1e-9)/${k}`:`math.floor(${vx}+1e-9)`;else if(mode==='ceil')e=dec?`math.ceil(${vx}*${k}-1e-9)/${k}`:`math.ceil(${vx}-1e-9)`;
   const W=pad>0?pad+(dec>0?dec+1:0):0;return `string.format("%${pad>0?'0'+W:''}.${dec}f",${e})`}
@@ -897,9 +905,11 @@ $('#pvbtn').onclick=()=>{previewMode=!previewMode;document.body.classList.toggle
 $('#zin').onclick=()=>{zoomFit=false;zoom=Math.min(40,zoom+1);requestRender(false)};$('#zout').onclick=()=>{zoomFit=false;zoom=Math.max(1,zoom-1);requestRender(false)};$('#zfit').onclick=()=>{zoomFit=true;relayout()};
 $('#gridbtn').onclick=()=>{showGrid=!showGrid;$('#gridbtn').classList.toggle('on',showGrid);requestRender(false)};
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===t));const lua=t.dataset.pane==='lua';$('#varpane').hidden=lua;$('#luapanewrap').hidden=!lua;if(lua)gen()});
-const LOBOX=[['#o_comments','comments'],['#o_min','minify'],['#o_bg','bg'],['#o_opt','opt']];
-function syncLO(){for(const [id,k] of LOBOX)$(id).checked=!!LO[k];$('#o_limit').value=String(LO.limit)}
+const LOBOX=[['#o_comments','comments'],['#o_min','minify'],['#o_bg','bg'],['#o_opt','opt'],['#o_gamma','gamma']];
+function syncLO(){for(const [id,k] of LOBOX)$(id).checked=!!LO[k];$('#o_gval').value=LO.gval;$('#o_gmode').value=LO.gmode||'curve';$('#o_gval').disabled=LO.gmode!=='pow';$('#o_limit').value=String(LO.limit)}
 for(const [id,k] of LOBOX){$(id).onchange=e=>{LO[k]=e.target.checked;gen();save()}}
+$('#o_gmode').onchange=e=>{LO.gmode=e.target.value;$('#o_gval').disabled=LO.gmode!=='pow';gen();save()};
+$('#o_gval').onchange=e=>{const v=+e.target.value;LO.gval=v>=1&&v<=3?v:2;e.target.value=LO.gval;gen();save()};
 $('#o_limit').onchange=e=>{LO.limit=+e.target.value;gen();save()};syncLO();
 $('#copylua').onclick=async()=>{const t=$('#luaout');t.value=genLua(LO);try{await navigator.clipboard.writeText(t.value);toast('Luaをコピーしました')}catch(e){t.select();try{document.execCommand('copy');toast('Luaをコピーしました')}catch(_){toast('選択しました。Ctrl+Cでコピーしてください')}}};
 $('#proj').onclick=()=>{$('#projtxt').value=JSON.stringify({S,V});$('#modal').hidden=false};
@@ -926,5 +936,5 @@ function afterLoad(){S.sel=S.layers.find(l=>l.id===S.sel)?S.sel:null;syncScreenU
 (function boot(){let ok=false;try{const raw=localStorage.getItem('meter-dot-studio.v1');if(raw){const o=JSON.parse(raw);if(o.S&&o.S.layers){S=o.S;migrate(S);V=o.V||{};curColor=o.curColor||curColor;recent=o.pal||[];if(o.lo)Object.assign(LO,o.lo);syncLO();fixVals();ok=true;hist=[JSON.stringify(S)];hi=0;afterLoad();$('#curcolor').value=curColor}}}catch(e){}
  if(!ok){loadTemplate('car')}
  setCur(curColor);setTool('select');
- window.__app={S:()=>S,V:()=>V,mkLayer,genLua,loadTemplate,LO,setTool,render:()=>{dirtyR=true;paint()}}})();
+ window.__app={S:()=>S,V:()=>V,mkLayer,gfix,genLua,loadTemplate,LO,setTool,render:()=>{dirtyR=true;paint()}}})();
 </script>
