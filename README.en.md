@@ -4,7 +4,7 @@
 
 A browser tool for making Stormworks gauges and digital panels: **paint it, move the values live, and export it as Lua, all on one screen.**
 
-> **▶ Try it: https://KomachiRaisu.github.io/Stormworks-Meter-Dot-Studio/**
+> **▶ Try it: https://YOUR-USERNAME.github.io/Stormworks-Meter-Dot-Studio/**
 > (No install. Just open it in a browser.)
 
 ![Screenshot](docs/screenshot.png)
@@ -26,6 +26,7 @@ The usual workflow was four separate steps: draw a base in GIMP, convert it to L
 - **Per-element color and opacity**
 - **Layers**: show/hide, lock, drag to reorder, duplicate
 - **Number and Bool variables**: drive them with sliders / ON-OFF toggles (ranges are editable). Bool variables control layer visibility (warning lamps etc.)
+- **Text selector**: switch the displayed text by a number (decimals allowed) or a Bool (e.g. P/R/N/D, ON/OFF); optional sliding mode with configurable visible range and colors for the neighboring texts
 - **Color correction**: darkens the exported `setColor` values so colors match what you see in the editor on the in-game display (a measured curve or plain gamma; the preview itself is unchanged)
 - **Optimized Lua export**: removes redundant `setColor` calls, aliases API functions, drops unused variables, shortens numbers, and packs large pixel art into strings. Shows usage against the 8192 / 4096 character limit
 - **Samples**: car, train, simple PFD
@@ -51,7 +52,7 @@ It is a single `index.html` with no build step. Open it in a browser. Work is au
 
 ## Disclaimer
 
-Stormworks: Build and Rescue is a trademark of Sunfox Games. This is an **unofficial fan-made tool** and is not affiliated with Sunfox Games.I’m worried that this might be a copycat of someone else’s work, or that it’s already been done, or that it overlaps with something else, so please let me know straight away if that’s the case!! If there’s a problem, I’ll take it down straight away!!! Also, as this was created using AI (Claude), there might be some glitches. I’ve tested it on PonyIDE just in case, so please let me know if you spot any issues.
+Stormworks: Build and Rescue is a trademark of Sunfox Games. This is an **unofficial fan-made tool** and is not affiliated with Sunfox Games.
 
 ## License
 

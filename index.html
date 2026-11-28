@@ -232,13 +232,14 @@ const ICON={
  needle:'<circle cx="10" cy="14" r="1.8"/><path d="M10 12.2L15.5 4.5"/><path d="M3 15A8 8 0 0 1 17 15" opacity=".4"/>',
  bar:'<rect x="3" y="7.5" width="14" height="5"/><rect x="3" y="7.5" width="8" height="5" fill="currentColor"/>',
  text:'<text x="10" y="14.5" text-anchor="middle" font-size="11" font-weight="700" fill="currentColor" stroke="none">Aa</text>',
+ pick:'<path d="M5 4.5h10" opacity=".35"/><path d="M4 10h12" stroke-width="2.6"/><path d="M5 15.5h10" opacity=".35"/>',
  eye:'<path d="M2 10s3-5.5 8-5.5S18 10 18 10s-3 5.5-8 5.5S2 10 2 10z"/><circle cx="10" cy="10" r="2.2"/>',
  eyeoff:'<path d="M2 10s3-5.5 8-5.5S18 10 18 10s-3 5.5-8 5.5S2 10 2 10z" opacity=".5"/><path d="M3 17L17 3"/>',
  lock:'<rect x="4.5" y="9" width="11" height="8" rx="1.5"/><path d="M7 9V6.5a3 3 0 0 1 6 0V9"/>',
  unlock:'<rect x="4.5" y="9" width="11" height="8" rx="1.5" opacity=".5"/><path d="M7 9V6.5a3 3 0 0 1 5.6-1.5" opacity=".5"/>'
 };
 const ico=(k,s=18)=>`<svg viewBox="0 0 20 20" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k]}</svg>`;
-const TYPES={dots:'ドット',circle:'円',arc:'円弧',rect:'四角',line:'線',needle:'針',bar:'バー',text:'文字'};
+const TYPES={dots:'ドット',circle:'円',arc:'円弧',rect:'四角',line:'線',needle:'針',bar:'バー',text:'文字',pick:'文字切替'};
 
 /* ---------- font (3x5 glyphs in a 5px cell) ---------- */
 const FONTSRC={'0':'###/#.#/#.#/#.#/###','1':'.#./##./.#./.#./###','2':'###/..#/###/#../###','3':'###/..#/###/..#/###','4':'#.#/#.#/###/..#/..#','5':'###/#../###/..#/###','6':'###/#../###/#.#/###','7':'###/..#/..#/.#./.#.','8':'###/#.#/###/#.#/###','9':'###/#.#/###/..#/###',
@@ -284,16 +285,18 @@ const DEF={
  line:()=>({x1:10,y1:10,x2:50,y2:30}),
  needle:()=>({x:48,y:48,len:30,tail:6,style:'line',width:3,hub:0,a0:-135,a1:135,expr:'',min:0,max:100}),
  bar:()=>({x:10,y:10,w:50,h:8,dir:'r',style:'solid',segs:10,gap:1,mark:2,expr:'',zero:false,neg:{on:false,color:'#f97316'},min:0,max:100,bg:{on:true,color:'#1e293b'},warn:{on:false,at:80,color:'#ef4444'},ticks:BTICK()}),
- text:()=>({x:10,y:10,pre:'',suf:'',expr:'',mode:'round',dec:0,pad:0,align:'l'})
+ text:()=>({x:10,y:10,pre:'',suf:'',expr:'',mode:'round',dec:0,pad:0,align:'l'}),
+ pick:()=>({x:48,y:40,align:'c',expr:'',kind:'num',start:0,step:1,items:[{t:'P',c:''},{t:'R',c:''},{t:'N',c:''},{t:'D',c:''}],anim:'step',dir:'v',rev:false,pitch:8,rangeB:1,rangeA:1,wrap:false,prevColor:'#64748b',nextColor:'#64748b'})
 };
 const BTICK=()=>({on:false,n:5,minor:1,side:'b',gap:1,lenMaj:3,lenMin:2,colMaj:'#e2e8f0',colMin:'#64748b',lbl:false,lblDec:0,lblEvery:1,lblSide:'b',lblColor:'#e2e8f0'});
-const VARTYPES=new Set(['arc','needle','bar','text']);
+const VARTYPES=new Set(['arc','needle','bar','text','pick']);
+function ensurePickVar(){let v=S.vars.find(x=>x.type!=='bool'&&exprName(x)==='select');if(!v){let n=1;while(S.vars.some(x=>exprName(x)==='select'))n++;v={id:'V'+(S.nid++),name:'select',ch:S.vars.filter(x=>x.type!=='bool').length+1,min:0,max:3,init:1,type:'num'};S.vars.push(v);V[v.id]=1;buildVars()}return exprName(v)}
 function ensureVar(){let v=S.vars.find(x=>x.type!=='bool');if(!v){v={id:'V'+(S.nid++),name:'value',ch:S.vars.filter(x=>x.type!=='bool').length+1,min:0,max:100,init:50,type:'num'};S.vars.push(v);V[v.id]=50;buildVars()}return exprName(v)}
 function mkLayer(type,props={},dry=false){
  const col=props.color||curColor;
  const L={id:dry?'ghost':'L'+(S.nid++),type,name:'',visible:true,locked:false,color:col,alpha:255,cond:{on:false,expr:'',op:'<',val:0}};
  merge(L,DEF[type](L));merge(L,props);
- if(!dry){ if(VARTYPES.has(type)&&!hasE(L)&&!('noVar' in props))L.expr=ensureVar(); delete L.noVar;
+ if(!dry){ if(VARTYPES.has(type)&&!hasE(L)&&!('noVar' in props))L.expr=type==='pick'?ensurePickVar():ensureVar(); delete L.noVar;
    if(!L.name){S.counters[type]=(S.counters[type]||0)+1;L.name=TYPES[type]+' '+S.counters[type]} }
  else L.name='ghost';
  return L}
@@ -369,6 +372,17 @@ function migrate(st){const nameOf=id=>{const v=st.vars.find(x=>x.id===id);return
  for(const L of st.layers){if(L.type==='bar'&&!L.ticks)L.ticks=BTICK();if('var' in L){if(L.expr===undefined)L.expr=L.var?nameOf(L.var):'';delete L.var}
   if(L.cond&&'v' in L){if(L.cond.expr===undefined)L.cond.expr=L.cond.v?nameOf(L.cond.v):'';delete L.cond.v}}}
 function renameRefs(a,b){const re=new RegExp('\\b'+a+'\\b','g');for(const L of S.layers){if(L.expr)L.expr=L.expr.replace(re,b);if(L.cond&&L.cond.expr)L.cond.expr=L.cond.expr.replace(re,b)}}
+/* ---- 文字切替(pick): 値→何番目の文字か。プレビューとLuaで同じ式 ---- */
+function pickVal(L){if(!hasE(L))return 0;const c=compileExpr(L.expr);if(!c.fn)return 0;if(c.sole){const v=S.vars.find(x=>x.id===c.sole);if(v&&v.type==='bool')return(V[c.sole]||0)!==0?1:0}return getE(L.expr)}
+const pickTxt=it=>String(it&&it.t!=null?it.t:'').replace(/[^\x20-\x7e]/g,'');
+function pickPlan(L){const n=L.items.length;if(!n)return[];const st=L.step||1,RB=Math.max(0,+L.rangeB||0),RA=Math.max(0,+L.rangeA||0),hz=L.dir==='h',P=(L.rev?-1:1)*(+L.pitch||0);
+ let t=(pickVal(L)-L.start)/st;if(L.wrap){let m=t%n;if(m*n<0)m+=n;t=m}else t=Math.max(0,Math.min(n-1,t));if(L.anim!=='slide')t=Math.floor(t+.5);
+ const lo=L.wrap?Math.ceil(t-RB):Math.max(0,Math.ceil(t-RB)),hi=L.wrap?Math.floor(t+RA):Math.min(n-1,Math.floor(t+RA)),out=[];
+ for(let i=lo;i<=hi;i++){const m=L.wrap?(((i%n)+n)%n):i,d=i-t,it=L.items[m],s=pickTxt(it),f=Math.floor(d*P+.5);
+  const c=Math.abs(d)<.5?(it.c||L.color):d<0?L.prevColor:L.nextColor;
+  const x=hz?(L.align==='c'?Math.floor(L.x+f-s.length*2.5+.5):L.align==='r'?L.x+f-s.length*5:L.x+f):(L.align==='c'?Math.floor(L.x-s.length*2.5+.5):L.align==='r'?L.x-s.length*5:L.x);
+  out.push({x,y:hz?L.y:L.y+f,s,c})}
+ return out}
 /* ---- number formatting (負の値も自然に: 0方向への切り捨て / 0から遠ざける切り上げ / 四捨五入は絶対値で) ---- */
 function fmtNum(v,mode,dec,pad){const k=Math.pow(10,dec);let t=v*k;
  if(mode==='floor')t=t<0?-Math.floor(-t+1e-9):Math.floor(t+1e-9);else if(mode==='ceil')t=t<0?-Math.ceil(-t-1e-9):Math.ceil(t-1e-9);else t=t<0?-Math.floor(.5-t):Math.floor(t+.5);
@@ -435,6 +449,7 @@ function drawLayer(R,L){
     else if(n>0){R.col(L.color,A);R.rectF(...rc(0,n))}}}
   if(L.style!=='mark')dT();
   break}
+ case'pick':{for(const q of pickPlan(L)){R.col(q.c,A);R.text(q.x,q.y,q.s)}break}
  case'text':{const s=textStr(L);R.col(L.color,A);const x=L.align==='c'?Math.floor(L.x-s.length*2.5+.5):L.align==='r'?L.x-s.length*5:L.x;R.text(x,L.y,s);break}
  }
 }
@@ -446,6 +461,7 @@ function bbox(L){switch(L.type){
  case'rect':case'bar':return[L.x,L.y,L.x+L.w,L.y+L.h];
  case'line':return[Math.min(L.x1,L.x2),Math.min(L.y1,L.y2),Math.max(L.x1,L.x2),Math.max(L.y1,L.y2)];
  case'needle':{const f=norm(getE(L.expr),L.min,L.max),a=rad(L.a0+f*(L.a1-L.a0)),s=Math.sin(a),c=Math.cos(a);const xs=[L.x,L.x+s*L.len,L.x-s*L.tail],ys=[L.y,L.y-c*L.len,L.y+c*L.tail];return[Math.floor(Math.min(...xs)),Math.floor(Math.min(...ys)),Math.ceil(Math.max(...xs)),Math.ceil(Math.max(...ys))]}
+ case'pick':{const P=pickPlan(L);if(!P.length)return[L.x,L.y,L.x,L.y+4];let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(const q of P){x0=Math.min(x0,q.x);y0=Math.min(y0,q.y);x1=Math.max(x1,q.x+Math.max(1,q.s.length*5)-1);y1=Math.max(y1,q.y+4)}return[x0,y0,x1,y1]}
  case'text':{const n=textStr(L).length,w=n*5,x=L.align==='c'?Math.floor(L.x-w/2+.5):L.align==='r'?L.x-w:L.x;return[x,L.y,x+w-1,L.y+4]}}}
 function segDist(px,py,x0,y0,x1,y1){const dx=x1-x0,dy=y1-y0,l=dx*dx+dy*dy;let t=l?((px-x0)*dx+(py-y0)*dy)/l:0;t=clamp(t,0,1);return Math.hypot(px-(x0+t*dx),py-(y0+t*dy))}
 function hit(L,x,y){switch(L.type){
@@ -614,6 +630,25 @@ function genLayer(L,nm,ctx){const o=[],p=s=>o.push(s),A=L.alpha,lx=src=>compileE
   p('end');
   if(L.style!=='mark')tk();
   break}
+ case'pick':{const n=L.items.length;if(!n)break;const st=L.step||1,RB=Math.max(0,+L.rangeB||0),RA=Math.max(0,+L.rangeA||0),hz=L.dir==='h',P=(L.rev?-1:1)*(+L.pitch||0),X=L.x,Y=L.y;
+  let ve='0';if(hasE(L)){const cc=compileExpr(L.expr),bv=cc.sole&&S.vars.find(x=>x.id===cc.sole);ve=bv&&bv.type==='bool'?`(${nm[bv.id]} and 1 or 0)`:lx(L.expr)}
+  const s0=L.start,sub=s0===0?ve:(s0>0?`(${ve}-${nf(s0)})`:`(${ve}+${nf(-s0)})`);
+  p('do');p(`local t=${st===1?sub:`${s0===0&&!/^[\w.]+$/.test(ve)?`(${ve})`:sub}/${st<0?par(st):nf(st)}`}`);
+  p(L.wrap?`t=t%${n}`:`t=math.max(0,math.min(${n-1},t))`);if(L.anim!=='slide')p('t=math.floor(t+.5)');
+  p(`local a={${L.items.map(it=>lstr(pickTxt(it))).join(',')}}`);
+  const custom=L.items.some(it=>it.c),ix=L.wrap?'m':'i';
+  if(custom)p(`local c={${L.items.map(it=>hex(it.c||L.color).map(gfix).join(',')).join(',')}}`);
+  const lo=`math.ceil(t${RB?`-${nf(RB)}`:''})`,hiE=`math.floor(t${RA?`+${nf(RA)}`:''})`;
+  p(`for i=${L.wrap?lo:`math.max(0,${lo})`},${L.wrap?hiE:`math.min(${n-1},${hiE})`} do`);
+  if(L.wrap)p(`local m=i%${n}`);
+  p('local d=i-t');p(`local s=a[${ix}+1]`);if(P)p(`local f=math.floor(d*${nf(P)}+.5)`);
+  const fx=P?'+f':'';
+  p('if math.abs(d)<.5 then');
+  if(custom){p(`local k=${ix}*3+1`);p(`screen.setColor(c[k],c[k+1],c[k+2]${A<255?','+A:''})`)}else p(lcol(L.color,A));
+  if(L.prevColor===L.nextColor){p('else');p(lcol(L.prevColor,A))}else{p('elseif d<0 then');p(lcol(L.prevColor,A));p('else');p(lcol(L.nextColor,A))}
+  p('end');
+  const xe=hz?(L.align==='c'?`math.floor(${X}${fx}-#s*2.5+.5)`:L.align==='r'?`${X}${fx}-#s*5`:`${X}${fx}`):(L.align==='c'?`math.floor(${X}-#s*2.5+.5)`:L.align==='r'?`${X}-#s*5`:`${X}`);
+  p(`screen.drawText(${xe},${hz?Y:`${Y}${fx}`},s)`);p('end');p('end');break}
  case'text':{if(!hasE(L)){const s=L.pre;const x=L.align==='c'?Math.floor(L.x-s.length*2.5+.5):L.align==='r'?L.x-s.length*5:L.x;p(lcol(L.color,A));p(`screen.drawText(${x},${L.y},${lstr(s)})`)}
   else{const K=Math.pow(10,L.dec),e=lx(L.expr),simple=/^[\w.]+$/.test(e);p('do');p(`local t=${L.dec?`${simple?e:`(${e})`}*${K}`:e}`);
    const fin_=x=>L.dec?`(${x})/${K}`:x;
@@ -698,7 +733,7 @@ let genT=null;function gen(){clearTimeout(genT);genT=setTimeout(()=>{const s=gen
  $('#sav').textContent=LO.opt?(()=>{const b=genLua({...LO,opt:false}).length;return b>n?`最適化で ${b} → ${n} 文字(−${b-n}字 / −${Math.round((b-n)/b*100)}%)`:'最適化の効果はありません'})():'最適化オフ(オンにすると短縮できます)'},80)}
 
 /* ---------- tools ---------- */
-const TOOLS=[['select','選択','V'],['pencil','ドット','P'],['eraser','消しゴム','E'],['picker','スポイト','I'],null,['circle','円・目盛','O'],['arc','円弧','A'],['rect','四角','R'],['line','線','L'],['needle','針','N'],['bar','バー','B'],['text','文字','T']];
+const TOOLS=[['select','選択','V'],['pencil','ドット','P'],['eraser','消しゴム','E'],['picker','スポイト','I'],null,['circle','円・目盛','O'],['arc','円弧','A'],['rect','四角','R'],['line','線','L'],['needle','針','N'],['bar','バー','B'],['text','文字','T'],['pick','文字切替','S']];
 const tb=$('#tools');
 for(const t of TOOLS){if(!t){tb.append(h('div',{class:'tsep'}),h('div',{class:'tgroup'},'置く'));continue}
  tb.append(h('button',{class:'tool'+(t[0]===tool?' on':''),'data-tool':t[0],title:`${t[1]} (${t[2]})`,html:ico(t[0],20)+`<span>${t[1]}</span>`,onclick:()=>setTool(t[0])}))}
@@ -729,7 +764,8 @@ function buildCreate(t,a,b,dry){const dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy),
  case'line':return d>=2?mkLayer('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y},dry):mkLayer('line',{x1:a.x,y1:a.y,x2:a.x+20,y2:a.y},dry);
  case'needle':return mkLayer('needle',{x:a.x,y:a.y,len:d>=4?rnd(d):rnd(m*.35),tail:Math.min(6,rnd(m*.08)),...nv},dry);
  case'bar':{const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y);const big=d>=3;const w=Math.abs(dx)+1,hh=Math.abs(dy)+1;return mkLayer('bar',big?{x,y,w,h:hh,dir:w>=hh?'r':'u',...nv}:{x:a.x,y:a.y,...nv},dry)}
- case'text':return mkLayer('text',{x:a.x,y:a.y,...nv},dry)}}
+ case'text':return mkLayer('text',{x:a.x,y:a.y,...nv},dry);
+ case'pick':return mkLayer('pick',{x:a.x,y:a.y,...nv},dry)}}
 cv.addEventListener('pointerdown',e=>{if(previewMode||e.button>0)return;cv.setPointerCapture(e.pointerId);const p=posOf(e);hover=p;
  if(tool==='select'){const L=pick(p.x,p.y);selectLayer(L?L.id:null);if(L)drag={kind:'move',L,last:p,moved:false}}
  else if(tool==='pencil'||tool==='eraser'){drag={kind:'paint',erase:tool==='eraser',L:null,last:p};paintSeg(p,p);dirtyR=true}
@@ -826,7 +862,29 @@ function buildInspector(keepFocus){const box=$('#inspector');if(keepFocus&&box.c
     row('位置',fsel(t,'side',[['a',(hz?'上':'左')+'(外側)'],['b',(hz?'下':'右')+'(外側)'],['ab','両側(外側)'],['ia',(hz?'上':'左')+'(内側)'],['ib',(hz?'下':'右')+'(内側)'],['iab','両側(内側)']])),row('長さ',h('span',{},'主'),fin(t,'lenMaj',{min:1,label:'主長'}),h('span',{},'補助'),fin(t,'lenMin',{min:1,label:'補助長'})),row(t.side[0]==='i'?'端から':'バーから',fin(t,'gap',{min:0,label:'間隔'}),h('span',{class:'hint'},t.side[0]==='i'?'px内側へ':'px離す')),
     row('色',h('span',{},'主'),fcol(t,'colMaj'),h('span',{},'補助'),fcol(t,'colMin')),
     row('数値',fck(t,'lbl',true,'ラベルを表示')),...(t.lbl?[row('ラベル位置',fsel(t,'lblSide',sd)),row('間引き',fin(t,'lblEvery',{min:1}),h('span',{class:'hint'},'N個おきに表示')),row('小数桁',fin(t,'lblDec',{min:0,max:4})),row('ラベル色',fcol(t,'lblColor')),h('div',{class:'hint'},'ラベルの数値は「値の範囲」の最小〜最大から自動で計算されます')]:[])]:[])))}
- if(T==='text')items.push(sec('文字',true,xy(L,'x','y'),row('値(式)',fexpr(L,'expr')),row('前の文字',ftx(L,'pre')),
+if(T==='pick'){const bool=L.kind==='bool',slide=L.anim==='slide',hz=L.dir==='h';
+  const setKind=k=>{L.kind=k;if(k==='bool'){L.items=[{t:'OFF',c:'#64748b'},{t:'ON',c:''}];L.start=0;L.step=1;L.anim='step';L.wrap=false;const bv=S.vars.find(v=>v.type==='bool');if(bv)L.expr=exprName(bv)}
+    else if(L.items.length<=2&&L.items[0]&&L.items[0].t==='OFF'){L.items=[{t:'P',c:''},{t:'R',c:''},{t:'N',c:''},{t:'D',c:''}];const nv=S.vars.find(v=>v.type!=='bool');L.expr=nv?exprName(nv):ensurePickVar()}
+    changed();commit();buildInspector()};
+  const kindSel=h('select',{'aria-label':'値の種類'},h('option',{value:'num',selected:!bool},'数値(何番のとき)'),h('option',{value:'bool',selected:bool},'Bool(ON/OFF)'));kindSel.onchange=()=>setKind(kindSel.value);
+  const list=h('div',{style:'display:grid;gap:4px;width:100%;min-width:0'});
+  L.items.forEach((it,i)=>{const lab=bool?(i?'ON':'OFF'):'='+(+(L.start+i*L.step).toFixed(6));
+   const ti=h('input',{type:'text',value:it.t,'aria-label':'表示する文字',spellcheck:'false',style:'min-width:0;flex:1;font-family:var(--mono)'});ti.addEventListener('input',()=>{it.t=ti.value;changed()});ti.addEventListener('change',commit);
+   const ci=h('input',{type:'color',value:it.c||L.color,'aria-label':'この文字の色(選ばれた時)',title:'この文字が選ばれている時の色'});ci.addEventListener('input',()=>{it.c=ci.value;changed()});ci.addEventListener('change',()=>{commit();buildInspector()});
+   const rs=h('button',{class:'btn sm',title:'基本の色に戻す',disabled:!it.c,onclick:()=>{it.c='';changed();commit();buildInspector()}},'既定');
+   const kids=[h('span',{class:'hint',style:'min-width:46px;font-family:var(--mono)'},lab),ti,ci,rs];
+   if(!bool)kids.push(h('button',{class:'btn sm danger',title:'この文字を削除',onclick:()=>{L.items.splice(i,1);changed();commit();buildInspector()}},'✕'));
+   list.append(h('div',{style:'display:flex;gap:6px;align-items:center'},...kids))});
+  if(!bool)list.append(h('button',{class:'btn sm',onclick:()=>{L.items.push({t:String(L.items.length),c:''});changed();commit();buildInspector()}},'＋ 文字を追加'));
+  items.push(sec('文字切替',true,xy(L,'x','y'),row('値の種類',kindSel),row('値(式)',fexpr(L,'expr')),
+   ...(bool?[h('div',{class:'hint'},'式にはBool変数を1つ書きます(OFF=0 / ON=1)。Bool変数は「変数」タブで追加できます。')]:[row('番号',h('span',{},'開始'),fin(L,'start',{step:'any',label:'開始値'}),h('span',{},'刻み'),fin(L,'step',{step:'any',label:'刻み'})),h('div',{class:'hint'},'上から順に「開始値」「開始値+刻み」…のときその文字を表示。小数もOK(例 開始0 刻み0.5)。')]),
+   row('文字',list),row('揃え',fsel(L,'align',[['l','左'],['c','中央'],['r','右']])),
+   ...(bool?[]:[row('切替方法',fsel(L,'anim',[['step','パッと切替(一番近い文字)'],['slide','スライド(小数の値でなめらかに動く)']],true)),row('循環',fck(L,'wrap',false,'最後の次は最初に戻る(方位など)'))]),
+   row('並べる向き',fsel(L,'dir',[['v','縦(下が次)'],['h','横(右が次)']],true),fck(L,'rev',false,'逆向き')),
+   row('文字の間隔',fin(L,'pitch',{min:0,max:200,label:'間隔'}),h('span',{class:'hint'},'px(中心どうし)'))));
+  items.push(sec('前後の文字(見える範囲・色)',true,row('見える範囲',h('span',{},hz?'左':'上'),fin(L,'rangeB',{step:0.5,min:0,max:8,label:'前の範囲'}),h('span',{},hz?'右':'下'),fin(L,'rangeA',{step:0.5,min:0,max:8,label:'後の範囲'})),h('div',{class:'hint'},'今の文字から何個ぶん離れた文字まで表示するか(0=今の文字だけ)。'+(slide?'スライド中は範囲に入った文字だけが現れます(画面を切り抜けないため)。':'')),
+   row('色',h('span',{},'今'),fcol(L,'color'),h('span',{},'前'),fcol(L,'prevColor'),h('span',{},'後'),fcol(L,'nextColor')),h('div',{class:'hint'},'「今」は基本の色。文字ごとの色は上のリストで個別に変えられます。')))}
+  if(T==='text')items.push(sec('文字',true,xy(L,'x','y'),row('値(式)',fexpr(L,'expr')),row('前の文字',ftx(L,'pre')),
    ...(hasE(L)?[row('後の文字',ftx(L,'suf')),row('端数処理',fsel(L,'mode',[['round','四捨五入'],['floor','切り捨て(0に近づける)'],['ceil','切り上げ(0から離す)']])),row('小数桁数',fin(L,'dec',{min:0,max:6})),row('整数部の桁',fin(L,'pad',{min:0,max:8}),h('span',{class:'hint'},'足りない分は0埋め(例 -005)'))]:[]),
    row('揃え',fsel(L,'align',[['l','左'],['c','中央'],['r','右']])),h('div',{class:'hint'},'表示できるのは半角英数と記号のみ(Stormworksの標準フォント)。1文字=幅5px。')));
  const cc=compileExpr(L.cond.expr),cvv=cc.sole?S.vars.find(x=>x.id===cc.sole):null,cB=!!(cvv&&cvv.type==='bool');
@@ -928,7 +986,7 @@ document.addEventListener('keydown',e=>{const tg=e.target.tagName;if(tg==='INPUT
  const L=selLayer();
  if((e.key==='Delete'||e.key==='Backspace')&&L){$('#l_del').click();return}
  if(L&&!L.locked&&e.key.startsWith('Arrow')){e.preventDefault();const s=e.shiftKey?5:1;moveBy(L,e.key==='ArrowLeft'?-s:e.key==='ArrowRight'?s:0,e.key==='ArrowUp'?-s:e.key==='ArrowDown'?s:0);commit();requestRender();gen();buildInspector();return}
- const m={v:'select',p:'pencil',e:'eraser',i:'picker',o:'circle',a:'arc',r:'rect',l:'line',n:'needle',b:'bar',t:'text'}[e.key.toLowerCase()];if(m&&!previewMode)setTool(m)});
+ const m={v:'select',p:'pencil',e:'eraser',i:'picker',o:'circle',a:'arc',r:'rect',l:'line',n:'needle',b:'bar',t:'text',s:'pick'}[e.key.toLowerCase()];if(m&&!previewMode)setTool(m)});
 
 function afterLoad(){S.sel=S.layers.find(l=>l.id===S.sel)?S.sel:null;syncScreenUI();buildPal();buildLayers();buildInspector();buildVars();updUndo();relayout();dirtyR=true;requestRender();gen()}
 
