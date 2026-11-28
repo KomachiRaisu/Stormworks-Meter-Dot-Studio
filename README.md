@@ -4,7 +4,7 @@
 
 Stormworks 用のメーター・デジパネを、**ペイント感覚で描いて、その場で動かして、そのままLuaにできる**ブラウザツールです。
 
-> **▶ 今すぐ使う: https://YOUR-USERNAME.github.io/Stormworks-Meter-Dot-Studio/**
+> **▶ 今すぐ使う: https://KomachiRaisu.github.io/Stormworks-Meter-Dot-Studio/**
 > (インストール不要。ブラウザで開くだけです)
 
 ![スクリーンショット](docs/screenshot.png)
@@ -63,7 +63,7 @@ Stormworks 用のメーター・デジパネを、**ペイント感覚で描い�
 
 ## 免責
 
-Stormworks: Build and Rescue は Sunfox Games の商標です。このツールは**非公式のファンメイドツール**で、Sunfox Games とは関係ありません。
+このツールは非公式のファンメイドツールだヨ！ 二番煎じというか既出というか被りとかが怖いのでそういうのだったらすぐに教えてください！！問題があったらすぐ消しますんで！！！ あとAI(Claude)で作成したので不具合があるかもです。一応PonyIDEでテストはしてあるので不具合あったら教えてね
 
 ## ライセンス
 
